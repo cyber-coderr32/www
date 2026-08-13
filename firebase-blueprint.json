@@ -1,0 +1,229 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account data and balance",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "balance": { "type": "number" },
+        "usdtBalance": { "type": "number" },
+        "totalWins": { "type": "number" },
+        "totalBets": { "type": "number" },
+        "phone": { "type": "string" },
+        "bio": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "balance"]
+    },
+    "GameResult": {
+      "title": "Game Result",
+      "description": "Historical record of a bet and its outcome",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "gameId": { "type": "string" },
+        "betAmount": { "type": "number" },
+        "winAmount": { "type": "number" },
+        "multiplier": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "gameId", "betAmount", "winAmount", "timestamp"]
+    },
+    "Post": {
+      "title": "Social Feed Post",
+      "description": "A social post shared by a user with optional likes",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "content": { "type": "string" },
+        "likes": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "content", "createdAt"]
+    },
+    "FriendRequest": {
+      "title": "Friend Request",
+      "description": "A friend request between two users",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "senderName", "receiverId", "receiverName", "status", "createdAt"]
+    },
+    "PrivateMessage": {
+      "title": "Private Chat Message",
+      "description": "A message sent privately from one friend to another",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatId", "senderId", "senderName", "receiverId", "receiverName", "content", "createdAt"]
+    },
+    "Story": {
+      "title": "Social Story",
+      "description": "A short-lived story with a custom gradient background and text",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "content": { "type": "string" },
+        "background": { "type": "string" },
+        "views": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "content", "background", "createdAt"]
+    },
+    "P2POffer": {
+      "title": "P2P Trading Offer",
+      "description": "An offer to buy or sell USDT using KZ/AOA",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string", "enum": ["BUY", "SELL"] },
+        "amount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "price": { "type": "number" },
+        "minLimit": { "type": "number" },
+        "whatsapp": { "type": "string" },
+        "paymentDetails": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE", "COMPLETED"] }
+      },
+      "required": ["userId", "userName", "type", "amount", "totalAmount", "price", "paymentDetails", "createdAt", "status"]
+    },
+    "P2PTrade": {
+      "title": "P2P Escrow Trade",
+      "description": "An active trade between a buyer and a seller with USDT locked in escrow",
+      "type": "object",
+      "properties": {
+        "offerId": { "type": "string" },
+        "buyerId": { "type": "string" },
+        "buyerName": { "type": "string" },
+        "sellerId": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "amount": { "type": "number" },
+        "price": { "type": "number" },
+        "totalKZ": { "type": "number" },
+        "status": { "type": "string", "enum": ["PENDING_PAYMENT", "PAID", "COMPLETED", "CANCELLED", "DISPUTED"] },
+        "paymentProofUrl": { "type": "string" },
+        "buyerPhone": { "type": "string" },
+        "sellerPhone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "disputeReason": { "type": "string" },
+        "disputedBy": { "type": "string" }
+      },
+      "required": ["offerId", "buyerId", "buyerName", "sellerId", "sellerName", "amount", "price", "totalKZ", "status", "createdAt", "updatedAt"]
+    },
+    "SocialNotification": {
+      "title": "Social Notification",
+      "description": "User notifications for likes, comments, messages, and friend requests",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "type": { "type": "string" },
+        "postId": { "type": "string" },
+        "commentId": { "type": "string" },
+        "content": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "senderId", "type", "isRead"]
+    },
+    "Transaction": {
+      "title": "Financial Transaction",
+      "description": "Deposits and withdrawals submitted by users",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "status"]
+    },
+    "PdfBook": {
+      "title": "PDF Market Book",
+      "description": "E-books listed for sale in the PDF Market",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "price": { "type": "number" },
+        "pdfUrl": { "type": "string" },
+        "coverUrl": { "type": "string" },
+        "description": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "author", "price"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and wallet"
+    },
+    "/game_history/{resultId}": {
+      "schema": "GameResult",
+      "description": "Log of all game outcomes"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Social feed posts shared by users"
+    },
+    "/friend_requests/{requestId}": {
+      "schema": "FriendRequest",
+      "description": "Friend requests and friendship relations"
+    },
+    "/private_messages/{messageId}": {
+      "schema": "PrivateMessage",
+      "description": "Private direct messages between users"
+    },
+    "/stories/{storyId}": {
+      "schema": "Story",
+      "description": "Dynamic short-lived user stories"
+    },
+    "/p2p_offers/{offerId}": {
+      "schema": "P2POffer",
+      "description": "USDT/KZ P2P Buy and Sell offers"
+    },
+    "/p2p_trades/{tradeId}": {
+      "schema": "P2PTrade",
+      "description": "P2P Escrow Trades to facilitate safe trading"
+    },
+    "/social_notifications/{notifId}": {
+      "schema": "SocialNotification",
+      "description": "Notifications for likes, comments, and messages"
+    },
+    "/transactions/{transId}": {
+      "schema": "Transaction",
+      "description": "Deposit and withdrawal requests"
+    },
+    "/pdf_books/{bookId}": {
+      "schema": "PdfBook",
+      "description": "PDF books listed in the marketplace"
+    }
+  }
+}

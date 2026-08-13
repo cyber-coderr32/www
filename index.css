@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body {
+    @apply h-full w-full overflow-hidden;
+    height: 100dvh;
+    background-color: #0b0e11;
+    color: #ffffff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: #ffffff;
+    letter-spacing: -0.025em;
+  }
+
+  p {
+    color: #cbd5e1;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Responsive threshold font adjustments */
+@media (max-width: 786px) {
+  html {
+     font-size: 13.5px;
+  }
+}
+
+@media (max-width: 360px) {
+  html {
+     font-size: 12px;
+  }
+  .text-7xl { font-size: 3.5rem; line-height: 1; }
+  .text-8xl { font-size: 4rem; line-height: 1; }
+  .text-9xl { font-size: 5rem; line-height: 1; }
+  
+  .p-6 { padding: 1rem; }
+  .p-8 { padding: 1.25rem; }
+  .gap-4 { gap: 0.75rem; }
+  
+  h1 { font-size: 1.5rem !important; }
+  h2 { font-size: 1.25rem !important; }
+  h3 { font-size: 1.1rem !important; }
+}
+
+/* Handle mobile browser address bar height */
+.h-screen-safe {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Form inputs high-contrast styling */
+input::placeholder, textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+/* Playing cards styling */
+.playing-card {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important;
+}
+
+.playing-card * {
+  color: inherit;
+}
+
+.playing-card .suit-heart, .suit-heart {
+  color: #e11d48 !important;
+}
+
+.playing-card .suit-diamond, .suit-diamond {
+  color: #0284c7 !important;
+}
+
+.playing-card .suit-club, .suit-club {
+  color: #059669 !important;
+}
+
+.playing-card .suit-spade, .suit-spade {
+  color: #0f172a !important;
+}

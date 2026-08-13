@@ -1,0 +1,33 @@
+{
+  "short_name": "CryptonBet",
+  "name": "CryptonBet - Apostas & Trading",
+  "description": "Plataforma oficial CryptonBet de apostas desportivas, jogos de casino e trading social.",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0b0e11",
+  "theme_color": "#049444",
+  "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["games", "finance", "entertainment"],
+  "lang": "pt-PT",
+  "dir": "ltr"
+}

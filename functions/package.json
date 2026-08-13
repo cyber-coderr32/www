@@ -1,0 +1,22 @@
+{
+  "name": "cryptonbet-cakto-functions",
+  "version": "1.0.0",
+  "description": "Firebase Cloud Functions para Integração de Pagamentos PIX da Cakto Pay",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "create-webhook": "node createWebhook.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^4.8.0"
+  },
+  "private": true
+}

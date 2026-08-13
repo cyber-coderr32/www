@@ -1,0 +1,248 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Entity Validations ---
+
+    function isValidUser(data) {
+      return data.uid is string && 
+             data.uid == request.auth.uid &&
+             data.balance is number && 
+             data.balance >= 0 &&
+             (!data.keys().hasAny(['usdtBalance']) || data.usdtBalance is number) &&
+             (!data.keys().hasAny(['totalWins']) || data.totalWins is number) &&
+             (!data.keys().hasAny(['totalBets']) || data.totalBets is number);
+    }
+
+    function isValidGameResult(data) {
+      return data.userId is string && 
+             data.userId == request.auth.uid &&
+             data.gameId is string && 
+             data.betAmount is number && 
+             data.winAmount is number;
+    }
+
+    function isValidPost(data) {
+      return data.userId is string &&
+             (data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+    }
+
+    function isValidFriendRequest(data) {
+      return data.senderId is string &&
+             data.senderId == request.auth.uid &&
+             data.senderName is string &&
+             data.receiverId is string &&
+             data.receiverName is string &&
+             data.status in ['pending', 'accepted', 'rejected'];
+    }
+
+    function isValidPrivateMessage(data) {
+      return data.chatId is string &&
+             data.senderId is string &&
+             data.senderId == request.auth.uid &&
+             data.senderName is string &&
+             data.receiverId is string &&
+             data.receiverName is string &&
+             data.content is string &&
+             data.content.size() <= 1000;
+    }
+
+    function isValidStory(data) {
+      return data.userId is string &&
+             (data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+    }
+
+    function isValidP2POffer(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.userName is string &&
+             data.type in ['BUY', 'SELL'] &&
+             data.amount is number &&
+             data.totalAmount is number &&
+             data.price is number &&
+             data.paymentDetails is string &&
+             data.status in ['ACTIVE', 'INACTIVE', 'COMPLETED'];
+    }
+
+    function isValidP2PTrade(data) {
+      return data.offerId is string &&
+             data.buyerId is string &&
+             data.buyerName is string &&
+             data.sellerId is string &&
+             data.sellerName is string &&
+             data.amount is number &&
+             data.price is number &&
+             data.totalKZ is number &&
+             data.status in ['PENDING_PAYMENT', 'PAID', 'COMPLETED', 'CANCELLED', 'DISPUTED'];
+    }
+
+    function isValidNotification(data) {
+      return data.userId is string &&
+             data.senderId is string &&
+             data.senderId == request.auth.uid &&
+             data.type is string &&
+             data.isRead is bool;
+    }
+
+    // --- Collection Matches ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn(); // Allow reading other profiles to support searching/listing users
+      allow list: if isSignedIn(); // Allow listing users to add as friends
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming()) && (
+        // Action: Update balance, stats, or profile details
+        incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'usdtBalance', 'totalWins', 'totalBets', 'updatedAt', 'displayName', 'phone', 'bio', 'avatarColor', 'whatsapp'])
+      );
+    }
+
+    match /game_history/{resultId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidGameResult(incoming());
+    }
+
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+    }
+
+    match /pdf_reviews/{reviewId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /pdf_purchases/{purchaseId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+    }
+
+    match /friend_requests/{requestId} {
+      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow create: if isSignedIn() && isValidFriendRequest(incoming());
+      allow update: if isSignedIn() && (
+        // Sender can cancel, receiver can accept/reject
+        (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+      );
+      allow delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+    }
+
+    match /private_messages/{messageId} {
+      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow create: if isSignedIn() && isValidPrivateMessage(incoming());
+      allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+    }
+
+    match /stories/{storyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+    }
+
+    match /p2p_offers/{offerId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidP2POffer(incoming());
+      allow update: if isSignedIn() && (
+        // Creator can update status, amount, etc.
+        (existing().userId == request.auth.uid && isValidP2POffer(incoming())) ||
+        // Buyer taking part of the offer can update the remaining amount and status
+        (incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'status']))
+      );
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /p2p_trades/{tradeId} {
+      allow read: if isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+      allow create: if isSignedIn() && isValidP2PTrade(incoming());
+      allow update: if isSignedIn() && (
+        (existing().buyerId == request.auth.uid || existing().sellerId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com') && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'paymentProofUrl', 'disputeReason', 'disputedBy'])
+        )
+      );
+    }
+
+    match /social_notifications/{notifId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidNotification(incoming());
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.senderId == request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.senderId == request.auth.uid);
+    }
+
+    match /transactions/{transId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com') && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+      );
+    }
+
+    match /pdf_books/{bookId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+    }
+
+    match /orders/{orderId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() || request.auth == null;
+    }
+
+    match /p2p_chat_messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+    }
+
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    match /api_keys/{keyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    match /operator_sessions/{sessionId} {
+      allow read, write: if true;
+    }
+
+    match /operator_transactions/{txId} {
+      allow read, write: if true;
+    }
+  }
+}
