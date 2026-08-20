@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { soundService } from '../services/soundService';
 import { caktoService } from '../services/caktoService';
+import { plisioService, SUPPORTED_PLISIO_CRYPTOS, PlisioCryptoOption } from '../services/plisioService';
 import { TransactionRequest, GlobalSettings, PaymentMethod } from '../types';
 import { db } from '../services/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -385,8 +386,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
   const [pixLoading, setPixLoading] = useState(false);
   const [pixData, setPixData] = useState<{ txId: string; qrCodeUrl: string; pixCopyPaste: string; checkoutUrl?: string; amountBrl: number; amountUsdt: number; expiresAt: number; receiverName: string } | null>(null);
   
+  // PLISIO CRYPTO STATES
+  const [plisioCrypto, setPlisioCrypto] = useState<string>('USDT_TON');
+  const [plisioInvoice, setPlisioInvoice] = useState<any | null>(null);
+  const [plisioLoading, setPlisioLoading] = useState<boolean>(false);
+  const [plisioCheckingStatus, setPlisioCheckingStatus] = useState<boolean>(false);
+  const [plisioWithdrawCrypto, setPlisioWithdrawCrypto] = useState<string>('USDT_TON');
+  const [plisioWithdrawLoading, setPlisioWithdrawLoading] = useState<boolean>(false);
+
   useEffect(() => {
     setPixData(null);
+    setPlisioInvoice(null);
   }, [selectedMethod, depositAmount]);
 
   // 5. FRONT-END: ACOMPANHAR O PAGAMENTO EM TEMPO REAL VIA FIRESTORE (onSnapshot)
@@ -412,6 +422,32 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
       unsub();
     };
   }, [pixData, balance, onUpdateBalance]);
+
+  // Real-time listener for Plisio Crypto Invoices
+  useEffect(() => {
+    if (!plisioInvoice || !plisioInvoice.txn_id) return;
+
+    console.log(`[Plisio Monitor] Escutando atualizações em tempo real no Firestore: orders/${plisioInvoice.txn_id}`);
+    const unsub = onSnapshot(doc(db, "orders", plisioInvoice.txn_id), (snap) => {
+      const data = snap.data();
+      if (data && (data.status === "completed" || data.status === "paid" || data.status === "mismatch")) {
+        console.log(`✅ [Plisio Monitor] Transação ${plisioInvoice.txn_id} confirmada na Blockchain!`);
+        soundService.playWin();
+        const bonus = (depositAmount * ((globalSettings?.plisio?.depositBonusPercent || 5) / 100));
+        const totalCredited = (data.amountUsdt || depositAmount) + bonus;
+        onUpdateBalance(balance + totalCredited);
+        showFeedback(`✅ Depósito Crypto Confirmado na Blockchain! +${totalCredited.toFixed(2)} USDT creditados.`);
+        setPlisioInvoice(null);
+        unsub();
+      }
+    }, (err) => {
+      console.warn(`[Plisio Monitor] Aviso no listener de orders/${plisioInvoice.txn_id}:`, err.message);
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [plisioInvoice, balance, depositAmount, globalSettings, onUpdateBalance]);
   
   const [withdrawAmount, setWithdrawAmount] = useState<number>(20);
   const [withdrawAccount, setWithdrawAccount] = useState<string>('');
@@ -433,22 +469,44 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
     window.addEventListener('resize', handleResize);
     const settings: GlobalSettings = JSON.parse(localStorage.getItem('skyhigh_settings') || '{}');
     setGlobalSettings(settings);
-    if (settings.paymentMethods) {
-      const activeMethods = settings.paymentMethods
-        .filter(m => m.isActive)
-        .map(m => {
-          if (m.type === 'PIX' || m.id === 'pix_cakto' || (m.name && m.name.toLowerCase().includes('cakto'))) {
-            return {
-              ...m,
-              name: 'PIX Automático (Brasil)',
-              details: 'Depósito instantâneo via PIX com aprovação em tempo real'
-            };
-          }
-          return m;
-        });
-      setPaymentMethods(activeMethods);
-      if (activeMethods.length > 0) setSelectedMethod(activeMethods[0]);
+
+    let rawMethods = settings.paymentMethods || [];
+    if (!rawMethods.some(m => m.id === 'plisio_crypto')) {
+      rawMethods = [
+        {
+          id: 'plisio_crypto',
+          name: '⚡ Cripto Automático (Plisio)',
+          type: 'CRYPTO',
+          account: 'Plisio Crypto Gateway',
+          icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80',
+          isActive: true,
+          minDeposit: 5,
+          maxWithdraw: 50000,
+          cryptoType: 'USDT',
+          cryptoNetwork: 'Multi-Chain (TRC20, BEP20, BTC, ETH, SOL, TRX, LTC, DOGE)',
+          details: 'Fatura instantânea com QR Code e crédito automático na Blockchain'
+        },
+        ...rawMethods
+      ];
     }
+
+    const activeMethods = rawMethods
+      .filter(m => m.isActive)
+      .map(m => {
+        if (m.type === 'PIX' || m.id === 'pix_cakto' || (m.name && m.name.toLowerCase().includes('cakto'))) {
+          return {
+            ...m,
+            name: 'PIX Automático (Brasil)',
+            details: 'Depósito instantâneo via PIX com aprovação em tempo real'
+          };
+        }
+        return m;
+      });
+
+    setPaymentMethods(activeMethods);
+    const defaultCrypto = activeMethods.find(m => m.id === 'plisio_crypto') || activeMethods[0];
+    if (defaultCrypto) setSelectedMethod(defaultCrypto);
+
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -554,6 +612,144 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
       soundService.playCrash();
     } finally {
       setPixLoading(false);
+    }
+  };
+
+  const handleGeneratePlisioInvoice = async () => {
+    if (depositAmount < 5) {
+      showFeedback("Depósito mínimo de 5 USDT para o gateway de criptomoedas.");
+      soundService.playCrash();
+      return;
+    }
+    setPlisioLoading(true);
+    soundService.playUISelect();
+    try {
+      const res = await plisioService.createDepositInvoice({
+        userId: user.id,
+        userEmail: user.email,
+        currency: plisioCrypto,
+        amountUsdt: depositAmount,
+        sourceCurrency: 'USDT'
+      });
+      if (res.status === 'success' && res.data) {
+        setPlisioInvoice(res.data);
+        soundService.playWin();
+        showFeedback("⚡ Redirecionando para o Checkout da Plisio...");
+
+        if (res.data.invoice_url) {
+          window.open(res.data.invoice_url, '_blank');
+        }
+
+        const transactions: TransactionRequest[] = JSON.parse(localStorage.getItem('skyhigh_transactions') || '[]');
+        const newRequest: TransactionRequest = {
+          id: res.data.txn_id,
+          userId: user.id,
+          userName: user.name,
+          type: 'DEPOSIT',
+          amount: depositAmount,
+          method: `Plisio Crypto (${plisioCrypto})`,
+          status: 'PENDING',
+          timestamp: new Date().toLocaleString('pt-PT'),
+          accountDetails: `Fatura Plisio: ${res.data.txn_id} • Valor: ${res.data.amount} ${res.data.currency}`
+        };
+        transactions.push(newRequest);
+        localStorage.setItem('skyhigh_transactions', JSON.stringify(transactions));
+      } else {
+        showFeedback(`Erro ao gerar fatura Plisio: ${res.message || 'Falha na conexão'}`);
+        soundService.playCrash();
+      }
+    } catch (e: any) {
+      showFeedback(`Erro: ${e.message}`);
+      soundService.playCrash();
+    } finally {
+      setPlisioLoading(false);
+    }
+  };
+
+  const handleCheckPlisioStatus = async () => {
+    if (!plisioInvoice?.txn_id) return;
+    setPlisioCheckingStatus(true);
+    soundService.playUISelect();
+    try {
+      const res = await plisioService.checkOperationStatus(plisioInvoice.txn_id);
+      if (res.status === 'success') {
+        const opStatus = res.data?.status || res.status;
+        if (opStatus === 'completed' || opStatus === 'paid' || opStatus === 'mismatch') {
+          soundService.playWin();
+          const bonus = (depositAmount * ((globalSettings?.plisio?.depositBonusPercent || 5) / 100));
+          const totalCredited = depositAmount + bonus;
+          onUpdateBalance(balance + totalCredited);
+          showFeedback(`✅ Depósito Confirmado na Blockchain! +${totalCredited.toFixed(2)} USDT creditados.`);
+          setPlisioInvoice(null);
+        } else {
+          showFeedback(`Status atual: ${String(opStatus).toUpperCase()} (Aguardando confirmações na rede...)`);
+        }
+      } else {
+        showFeedback(res.message || 'Aguardando confirmações na rede...');
+      }
+    } catch (e: any) {
+      showFeedback(`Erro ao verificar: ${e.message}`);
+    } finally {
+      setPlisioCheckingStatus(false);
+    }
+  };
+
+  const handlePlisioWithdrawal = async () => {
+    if (withdrawAmount > balance) {
+      showFeedback("Saldo insuficiente para efetuar o levantamento.");
+      soundService.playCrash();
+      return;
+    }
+    if (withdrawAmount < 10) {
+      showFeedback("Montante mínimo de levantamento é 10 USDT.");
+      soundService.playCrash();
+      return;
+    }
+    if (!withdrawAccount || withdrawAccount.trim().length < 8) {
+      showFeedback("Por favor insira um endereço de carteira cripto válido.");
+      soundService.playCrash();
+      return;
+    }
+
+    setPlisioWithdrawLoading(true);
+    soundService.playWithdrawProcessing();
+    try {
+      const res = await plisioService.requestWithdrawal({
+        userId: user.id,
+        currency: plisioWithdrawCrypto,
+        amount: withdrawAmount,
+        toAddress: withdrawAccount
+      });
+
+      if (res.status === 'success') {
+        onUpdateBalance(Math.max(0, balance - withdrawAmount));
+        setWithdrawStep('SUCCESS');
+        soundService.playWithdrawSuccess();
+        showFeedback("⚡ Levantamento Plisio enviado com sucesso para a rede Blockchain!");
+
+        const transactions: TransactionRequest[] = JSON.parse(localStorage.getItem('skyhigh_transactions') || '[]');
+        const newRequest: TransactionRequest = {
+          id: res.data?.txn_id || ('OUT_PLISIO_' + Math.random().toString(36).substr(2, 6).toUpperCase()),
+          userId: user.id,
+          userName: user.name,
+          type: 'WITHDRAW',
+          amount: withdrawAmount,
+          method: `Plisio Crypto (${plisioWithdrawCrypto})`,
+          status: 'PENDING',
+          timestamp: new Date().toLocaleString('pt-PT'),
+          accountDetails: `Destino: ${withdrawAccount} (TxID: ${res.data?.tx_url || 'Em processamento'})`
+        };
+        transactions.push(newRequest);
+        localStorage.setItem('skyhigh_transactions', JSON.stringify(transactions));
+      } else {
+        showFeedback(`Erro no levantamento: ${res.message}`);
+        soundService.playCrash();
+      }
+    } catch (e: any) {
+      showFeedback(`Erro: ${e.message}`);
+      soundService.playCrash();
+    } finally {
+      setPlisioWithdrawLoading(false);
     }
   };
 
@@ -857,8 +1053,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                        className="space-y-6"
                      >
                         <div className="bg-[#131d27]/60 backdrop-blur-xl border border-white/5 rounded-[2rem] p-6 space-y-6">
-                            <div className="flex p-1.5 bg-black/40 rounded-2xl border border-white/5">
-                              <button onClick={() => setWalletMode('DEPOSIT')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${walletMode === 'DEPOSIT' ? 'bg-[#049444] text-white shadow-lg' : 'text-white/30 hover:text-white'}`}>Depósito USDT</button>
+                           <div className="flex p-1.5 bg-black/40 rounded-2xl border border-white/5">
+                              <button onClick={() => setWalletMode('DEPOSIT')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${walletMode === 'DEPOSIT' ? 'bg-[#049444] text-white shadow-lg' : 'text-white/30 hover:text-white'}`}>⚡ Depósito Cripto & PIX</button>
                               <button onClick={() => setWalletMode('WITHDRAW')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${walletMode === 'WITHDRAW' ? 'bg-[#FFCC00] text-black shadow-lg' : 'text-white/30 hover:text-white'}`}>Levantamento USDT</button>
                            </div>
 
@@ -867,20 +1063,39 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                <div className="space-y-6">
                                   {/* Seleção do Método de Pagamento */}
                                   <div className="space-y-3">
-                                     <label className="text-[10px] font-black text-white/40 uppercase tracking-widest block">Selecione a Forma de Depósito</label>
+                                     <div className="flex items-center justify-between">
+                                       <label className="text-[10px] font-black text-white/40 uppercase tracking-widest block">Selecione a Forma de Depósito</label>
+                                       <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                         Blockchain Plisio Ativo
+                                       </span>
+                                     </div>
                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                        {paymentMethods.map(method => (
+                                        {paymentMethods.map(method => {
+                                          const isPlisio = method.id === 'plisio_crypto';
+                                          const isPix = method.type === 'PIX' || method.id === 'pix_cakto';
+                                          return (
                                           <button 
                                             key={method.id} 
                                             onClick={() => setSelectedMethod(method)} 
-                                            className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-2 text-center group cursor-pointer ${selectedMethod?.id === method.id ? 'bg-[#049444]/15 border-[#049444] shadow-lg' : 'bg-black/20 border-white/5 hover:border-white/20'}`}
+                                            className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-2 text-center group cursor-pointer relative overflow-hidden ${selectedMethod?.id === method.id ? isPlisio ? 'bg-emerald-500/20 border-emerald-400 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-400/40' : 'bg-[#049444]/15 border-[#049444] shadow-lg' : 'bg-black/20 border-white/5 hover:border-white/20'}`}
                                           >
-                                            <span className="text-sm font-black text-white">{method.name}</span>
-                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${selectedMethod?.id === method.id ? 'bg-[#049444] text-white' : 'bg-white/10 text-slate-400'}`}>
+                                            {isPlisio && (
+                                              <div className="absolute top-0 right-0 bg-amber-400 text-black text-[8px] font-black px-2 py-0.5 rounded-bl-lg uppercase tracking-wider">
+                                                +5% Bónus
+                                              </div>
+                                            )}
+                                            <span className="text-sm font-black text-white flex items-center gap-1">
+                                              {isPlisio && <span className="text-emerald-400">⚡</span>}
+                                              {isPix && <span>🇧🇷</span>}
+                                              {method.name}
+                                            </span>
+                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${selectedMethod?.id === method.id ? isPlisio ? 'bg-emerald-500 text-black font-black' : 'bg-[#049444] text-white' : 'bg-white/10 text-slate-400'}`}>
                                               {method.cryptoNetwork ? `${method.cryptoType || 'USDT'} (${method.cryptoNetwork})` : method.type}
                                             </span>
                                           </button>
-                                        ))}
+                                        );
+                                        })}
                                      </div>
                                   </div>
 
@@ -892,7 +1107,59 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                         <span className="text-[10px] text-slate-400 font-mono">Mínimo: {selectedMethod.minDeposit} USDT</span>
                                       </div>
 
-                                      {selectedMethod.type === 'PIX' || selectedMethod.id === 'pix_cakto' ? (
+                                      {selectedMethod.id === 'plisio_crypto' || (selectedMethod.type === 'CRYPTO' && selectedMethod.id !== 'usdt_trc20_manual') ? (
+                                        <div className="space-y-4">
+                                          <div className="bg-gradient-to-r from-emerald-500/20 via-cyan-500/10 to-transparent p-4 sm:p-5 rounded-2xl border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                            <div className="flex items-center gap-3.5">
+                                              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl shrink-0 shadow-lg shadow-emerald-500/20">
+                                                ⚡
+                                              </div>
+                                              <div>
+                                                <div className="flex items-center gap-2">
+                                                  <h4 className="text-sm font-black uppercase text-white tracking-wide">Gateway Blockchain Plisio</h4>
+                                                  <span className="text-[9px] bg-amber-400 text-black font-black px-2 py-0.5 rounded-full uppercase">+{globalSettings?.plisio?.depositBonusPercent || 5}% Bónus</span>
+                                                </div>
+                                                <p className="text-xs text-slate-300 font-medium mt-0.5">
+                                                  Depósito e Saque automatizados em criptomoedas com liquidação instantânea via Blockchain.
+                                                </p>
+                                              </div>
+                                            </div>
+                                            <span className="text-[10px] bg-emerald-500 text-black font-black px-3 py-1 rounded-full uppercase tracking-wider shrink-0 shadow-lg shadow-emerald-500/20">
+                                              Automático & Seguro
+                                            </span>
+                                          </div>
+
+                                          {/* Seleção de Criptomoeda */}
+                                          <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-300 uppercase tracking-wider block">
+                                              Selecione a Criptomoeda para o Pagamento:
+                                            </label>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                                              {SUPPORTED_PLISIO_CRYPTOS.map((c) => (
+                                                <button
+                                                  key={c.id}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setPlisioCrypto(c.id);
+                                                    setPlisioInvoice(null);
+                                                  }}
+                                                  className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all cursor-pointer text-left ${
+                                                    plisioCrypto === c.id
+                                                      ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-md'
+                                                      : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:text-white'
+                                                  }`}
+                                                >
+                                                  <span className="text-base">{c.icon}</span>
+                                                  <div className="min-w-0">
+                                                    <div className="text-xs font-black truncate">{c.symbol}</div>
+                                                    <div className="text-[9px] text-slate-400 font-medium truncate">{c.network}</div>
+                                                  </div>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ) : selectedMethod.type === 'PIX' || selectedMethod.id === 'pix_cakto' ? (
                                         <div className="space-y-4">
                                           <div className="bg-gradient-to-r from-emerald-500/20 via-emerald-500/10 to-transparent p-4 sm:p-5 rounded-2xl border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                             <div className="flex items-center gap-3.5">
@@ -951,7 +1218,103 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                   )}
 
                                   {/* Formulário de Depósito */}
-                                  {selectedMethod?.type === 'PIX' || selectedMethod?.id === 'pix_cakto' ? (
+                                  {selectedMethod?.id === 'plisio_crypto' || (selectedMethod?.type === 'CRYPTO' && selectedMethod?.id !== 'usdt_trc20_manual') ? (
+                                    <div className="space-y-5 pt-2 animate-in fade-in duration-300">
+                                      <div className="flex justify-between items-end px-2">
+                                        <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Montante do Depósito (USDT)</label>
+                                        <span className="text-xs font-black text-emerald-300 flex items-center gap-1">
+                                          <span>+{((depositAmount * (globalSettings?.plisio?.depositBonusPercent || 5)) / 100).toFixed(2)} USDT Bónus</span>
+                                          <span className="text-slate-400">| Total: {(depositAmount + (depositAmount * (globalSettings?.plisio?.depositBonusPercent || 5)) / 100).toFixed(2)} USDT</span>
+                                        </span>
+                                      </div>
+                                      <div className="relative">
+                                        <input 
+                                          type="number" 
+                                          value={depositAmount} 
+                                          onChange={e => setDepositAmount(Number(e.target.value))} 
+                                          disabled={!!plisioInvoice || plisioLoading}
+                                          className="w-full bg-black/40 border border-emerald-500/30 rounded-3xl px-8 py-5 text-white font-mono font-black text-3xl outline-none focus:border-emerald-500 transition-all disabled:opacity-50" 
+                                        />
+                                        <div className="absolute right-8 top-1/2 -translate-y-1/2 text-xl font-black text-emerald-400 uppercase italic font-mono">USDT</div>
+                                      </div>
+
+                                      {!plisioInvoice ? (
+                                        <button 
+                                          onClick={handleGeneratePlisioInvoice}
+                                          disabled={plisioLoading}
+                                          className="w-full py-5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black rounded-2xl font-black uppercase text-xs tracking-[0.15em] shadow-xl shadow-emerald-500/30 transition-all active:scale-95 group flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                                        >
+                                          {plisioLoading ? (
+                                            <>
+                                              <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                                              <span>CRIANDO COBRANÇA PLISIO...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <span>⚡ PAGAR NA PÁGINA OFICIAL DA PLISIO</span>
+                                              <ArrowUpRight className="w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                                            </>
+                                          )}
+                                        </button>
+                                      ) : (
+                                        <div className="space-y-5 bg-gradient-to-b from-black/80 to-black/95 border-2 border-emerald-500/40 rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-300 text-center">
+                                          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                                            <div className="flex items-center gap-2">
+                                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                                              <span className="text-xs font-black uppercase text-emerald-400 tracking-wider">Checkout Plisio Iniciado</span>
+                                            </div>
+                                            <span className="text-[10px] font-mono bg-white/10 px-2.5 py-1 rounded-full text-slate-300">
+                                              {plisioInvoice.txn_id?.substring(0, 14)}...
+                                            </span>
+                                          </div>
+
+                                          <div className="py-2 space-y-2">
+                                            <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider block">Valor do Depósito</span>
+                                            <div className="text-3xl font-black text-emerald-400 font-mono">
+                                              {depositAmount} USDT
+                                            </div>
+                                            <span className="text-xs text-amber-400 font-bold block">
+                                              + {((depositAmount * (globalSettings?.plisio?.depositBonusPercent || 5)) / 100).toFixed(2)} USDT Bónus
+                                            </span>
+                                            <p className="text-xs text-slate-300 max-w-md mx-auto pt-2 leading-relaxed">
+                                              Uma nova aba foi aberta no navegador com o pagamento seguro da Plisio. Ao concluir o envio da criptomoeda, seu saldo será creditado automaticamente.
+                                            </p>
+                                          </div>
+
+                                          {plisioInvoice.invoice_url && (
+                                            <div>
+                                              <a
+                                                href={plisioInvoice.invoice_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl font-black uppercase text-xs tracking-wider transition-all flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/25"
+                                              >
+                                                <span>🛒 ABRIR PÁGINA DE PAGAMENTO DA PLISIO</span>
+                                                <ExternalLink className="w-4 h-4" />
+                                              </a>
+                                            </div>
+                                          )}
+
+                                          <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                                            <button
+                                              onClick={handleCheckPlisioStatus}
+                                              disabled={plisioCheckingStatus}
+                                              className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-black uppercase text-[10px] tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                            >
+                                              <RefreshCw className={`w-3.5 h-3.5 ${plisioCheckingStatus ? 'animate-spin' : ''}`} />
+                                              <span>{plisioCheckingStatus ? 'VERIFICANDO...' : 'VERIFICAR SALDO AGORA'}</span>
+                                            </button>
+                                            <button 
+                                              onClick={() => setPlisioInvoice(null)}
+                                              className="px-4 py-3 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl font-black uppercase text-[10px] tracking-wider border border-white/5 transition-all cursor-pointer"
+                                            >
+                                              Novo Depósito
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : selectedMethod?.type === 'PIX' || selectedMethod?.id === 'pix_cakto' ? (
                                     <div className="space-y-5 pt-2 animate-in fade-in duration-300">
                                       <div className="flex justify-between items-end px-2">
                                         <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Montante do Depósito (USDT)</label>
@@ -1141,6 +1504,35 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                      </div>
                                   </div>
 
+                                  {/* Seção Cripto Plisio para Saques */}
+                                  {(selectedMethod?.id === 'plisio_crypto' || (selectedMethod?.type === 'CRYPTO' && selectedMethod?.id !== 'usdt_trc20_manual')) && (
+                                    <div className="space-y-2 p-4 bg-black/40 border border-emerald-500/30 rounded-2xl">
+                                      <label className="text-[10px] font-black text-emerald-400 uppercase tracking-wider block">
+                                        Selecione a Criptomoeda para o Levantamento:
+                                      </label>
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                                        {SUPPORTED_PLISIO_CRYPTOS.map((c) => (
+                                          <button
+                                            key={c.id}
+                                            type="button"
+                                            onClick={() => setPlisioWithdrawCrypto(c.id)}
+                                            className={`p-2 rounded-xl border flex items-center gap-2 transition-all cursor-pointer text-left ${
+                                              plisioWithdrawCrypto === c.id
+                                                ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-md'
+                                                : 'bg-black/30 border-white/5 text-slate-400 hover:border-white/20 hover:text-white'
+                                            }`}
+                                          >
+                                            <span className="text-sm">{c.icon}</span>
+                                            <div className="min-w-0">
+                                              <div className="text-xs font-black truncate">{c.symbol}</div>
+                                              <div className="text-[8px] text-slate-400 font-medium truncate">{c.network}</div>
+                                            </div>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
                                   <div className="space-y-4">
                                      <div className="flex justify-between items-end px-2">
                                         <label className="text-[10px] font-black text-white/30 uppercase tracking-widest">Valor do Levantamento</label>
@@ -1158,12 +1550,20 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                   </div>
 
                                   <div className="space-y-2">
-                                     <label className="text-[9px] font-black text-white/40 uppercase ml-2 block tracking-widest">Dados da Sua Conta Destino (Telefone Unitel Money, IBAN ou Carteira Crypto)</label>
+                                     <label className="text-[9px] font-black text-white/40 uppercase ml-2 block tracking-widest">
+                                       {selectedMethod?.id === 'plisio_crypto' || (selectedMethod?.type === 'CRYPTO' && selectedMethod?.id !== 'usdt_trc20_manual')
+                                         ? `Endereço da Sua Carteira Cripto (${plisioWithdrawCrypto})`
+                                         : 'Dados da Sua Conta Destino (Telefone Unitel Money, IBAN ou Carteira Crypto)'}
+                                     </label>
                                      <div className="relative">
                                         <CreditCard className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20" />
                                         <input 
                                           type="text" 
-                                          placeholder="Ex: 923... / AO06... / T... (TRC20)" 
+                                          placeholder={
+                                            selectedMethod?.id === 'plisio_crypto' || (selectedMethod?.type === 'CRYPTO' && selectedMethod?.id !== 'usdt_trc20_manual')
+                                              ? `Insira o seu endereço ${plisioWithdrawCrypto}...`
+                                              : 'Ex: 923... / AO06... / T... (TRC20)'
+                                          }
                                           value={withdrawAccount} 
                                           onChange={e => setWithdrawAccount(e.target.value)} 
                                           className="w-full bg-black/40 border border-white/5 rounded-2xl px-14 py-4 text-white font-mono font-bold text-xs outline-none focus:border-[#FFCC00] transition-all placeholder:text-white/20" 
@@ -1171,10 +1571,34 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                      </div>
                                   </div>
 
-                                  <button onClick={handleWithdrawRequest} disabled={withdrawAmount > balance || !withdrawAccount || withdrawAmount < 1} className={`w-full py-5 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${withdrawAmount > balance || !withdrawAccount || withdrawAmount < 1 ? 'bg-white/5 text-white/20 cursor-not-allowed' : 'bg-[#FFCC00] text-black shadow-xl shadow-[#FFCC00]/10 hover:bg-[#e6b800] group'}`}>
-                                     Solicitar Levantamento Manual
-                                     <ArrowDownLeft className="w-5 h-5 group-hover:-translate-x-1 group-hover:translate-y-1 transition-transform" />
-                                  </button>
+                                  {selectedMethod?.id === 'plisio_crypto' || (selectedMethod?.type === 'CRYPTO' && selectedMethod?.id !== 'usdt_trc20_manual') ? (
+                                    <button 
+                                      onClick={handlePlisioWithdrawal} 
+                                      disabled={plisioWithdrawLoading || withdrawAmount > balance || !withdrawAccount || withdrawAmount < 1} 
+                                      className={`w-full py-5 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
+                                        withdrawAmount > balance || !withdrawAccount || withdrawAmount < 1 || plisioWithdrawLoading 
+                                          ? 'bg-white/5 text-white/20 cursor-not-allowed' 
+                                          : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-black shadow-xl shadow-emerald-500/20 hover:from-emerald-400 hover:to-teal-400 group'
+                                      }`}
+                                    >
+                                      {plisioWithdrawLoading ? (
+                                        <>
+                                          <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                                          <span>PROCESSANDO LEVANTAMENTO NA BLOCKCHAIN...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span>⚡ SOLICITAR LEVANTAMENTO CRIPTO (PLISIO)</span>
+                                          <ArrowDownLeft className="w-5 h-5 group-hover:-translate-x-1 group-hover:translate-y-1 transition-transform" />
+                                        </>
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <button onClick={handleWithdrawRequest} disabled={withdrawAmount > balance || !withdrawAccount || withdrawAmount < 1} className={`w-full py-5 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${withdrawAmount > balance || !withdrawAccount || withdrawAmount < 1 ? 'bg-white/5 text-white/20 cursor-not-allowed' : 'bg-[#FFCC00] text-black shadow-xl shadow-[#FFCC00]/10 hover:bg-[#e6b800] group'}`}>
+                                       Solicitar Levantamento Manual
+                                       <ArrowDownLeft className="w-5 h-5 group-hover:-translate-x-1 group-hover:translate-y-1 transition-transform" />
+                                    </button>
+                                  )}
                                </div>
                              ) : (
                                <div className="py-20 text-center space-y-6 flex flex-col items-center">

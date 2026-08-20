@@ -39,6 +39,7 @@ interface HomeViewProps {
   userName: string;
   onSelectGame: (view: ViewState, category?: string) => void;
   onGoToProfile: () => void;
+  onOpenDeposit?: () => void;
 }
 
 interface PromoSlide {
@@ -173,7 +174,7 @@ const PROMO_SLIDES: PromoSlide[] = [
 
 import { FeaturedGames } from '../components/FeaturedGames';
 
-const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelectGame, onGoToProfile }) => {
+const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelectGame, onGoToProfile, onOpenDeposit }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 786);
 
@@ -243,6 +244,24 @@ const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelect
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Botão de Depósito Cripto no Header */}
+          <button
+            onClick={() => {
+              soundService.playUISelect();
+              if (onOpenDeposit) onOpenDeposit();
+              else onGoToProfile();
+            }}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-black px-3 py-1.5 md:py-2 rounded-xl transition-all font-black uppercase text-[10px] md:text-xs cursor-pointer select-none active:scale-95 shadow-lg group border border-yellow-300/40"
+            title="Depósito Cripto Automático (Plisio Multi-Chain)"
+          >
+            <Zap className="w-3.5 h-3.5 fill-black text-black group-hover:scale-110 transition-transform animate-pulse" />
+            <span className="hidden sm:inline font-black">Depósito Cripto</span>
+            <span className="sm:hidden font-black">+ Cripto</span>
+            <span className="bg-black text-[#FFCC00] text-[8px] px-1 py-0.2 rounded font-black hidden md:inline">
+              +5% BÓNUS
+            </span>
+          </button>
+
           {/* Botão de Comunidade / Social no Header */}
           <button
             onClick={() => {
@@ -353,6 +372,49 @@ const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelect
             </AnimatePresence>
           </div>
         </section>
+
+        {/* Quick Crypto Deposit Banner */}
+        <div className="px-3 md:px-8 mb-4">
+          <motion.div
+            whileHover={{ scale: 1.01 }}
+            onClick={() => {
+              soundService.playUISelect();
+              if (onOpenDeposit) onOpenDeposit();
+              else onGoToProfile();
+            }}
+            className="bg-gradient-to-r from-emerald-950/80 via-[#0d2218] to-teal-950/80 border border-emerald-500/40 hover:border-emerald-400 p-4 md:p-5 rounded-2xl md:rounded-3xl shadow-xl cursor-pointer flex flex-col sm:flex-row items-center justify-between gap-4 relative overflow-hidden group"
+          >
+            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="flex items-center gap-3.5 z-10 w-full sm:w-auto">
+              <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl text-black shadow-lg shadow-emerald-500/20 shrink-0 font-black text-xl flex items-center justify-center">
+                ⚡
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Plisio Multi-Chain Cripto
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-400 text-black">
+                    +5% BÓNUS EXTRA
+                  </span>
+                </div>
+                <h4 className="text-sm md:text-base font-black uppercase tracking-tight text-white group-hover:text-emerald-300 transition-colors">
+                  Depósito Rápido com Criptomoedas (USDT, BTC, ETH, SOL, TRX, PIX)
+                </h4>
+                <p className="text-[11px] text-slate-300 hidden md:block">
+                  Crédito 100% automático na Blockchain em segundos. Sem taxas ocultas e com liquidação instantânea.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 z-10 w-full sm:w-auto justify-end">
+              <button className="w-full sm:w-auto px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 cursor-pointer">
+                <span>Depositar Cripto Agora</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        </div>
 
         {/* Featured Section */}
         <div className="px-4 md:px-8 mb-6">

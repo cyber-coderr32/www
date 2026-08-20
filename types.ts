@@ -171,6 +171,16 @@ export interface CaktoSettings {
   pixCopyPaste?: string; // Código PIX Copia e Cola gerado por produto Cakto
 }
 
+export interface PlisioSettings {
+  enabled: boolean;
+  secretKey?: string;
+  whiteLabel?: boolean;
+  environment: 'sandbox' | 'production';
+  defaultCurrency?: string; // e.g. 'USDT_TRX'
+  acceptedCurrencies?: string[];
+  depositBonusPercent?: number;
+}
+
 export interface PaymentMethod {
   id: string;
   name: string;
@@ -181,7 +191,7 @@ export interface PaymentMethod {
   isActive: boolean;
   minDeposit: number;
   maxWithdraw: number;
-  cryptoType?: 'USDT' | 'BTC';
+  cryptoType?: 'USDT' | 'BTC' | 'ETH' | 'SOL' | 'TRX' | 'BNB' | 'LTC' | 'DOGE';
   cryptoNetwork?: string;
   entityNumber?: string;
   referenceNumber?: string;
@@ -202,4 +212,5 @@ export interface GlobalSettings {
   totalPaid: number;
   paymentMethods: PaymentMethod[];
   cakto?: CaktoSettings;
+  plisio?: PlisioSettings;
 }

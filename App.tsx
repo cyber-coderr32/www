@@ -148,7 +148,8 @@ const App: React.FC = () => {
     totalVolume: 0,
     totalPaid: 0,
     paymentMethods: [
-      { id: 'usdt_trc20', name: 'USDT (TRC-20 Cripto)', type: 'CRYPTO', account: 'TYd8S1kX9aPz2mQqR4vW7tL0uJ3bC5nE', icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 10, maxWithdraw: 50000, cryptoType: 'USDT', cryptoNetwork: 'TRC20', details: 'Rede TRON (TRC20) • Depósito manual sem taxas' },
+      { id: 'plisio_crypto', name: '⚡ Cripto Automático (Plisio)', type: 'CRYPTO', account: 'Plisio Crypto Gateway', icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 5, maxWithdraw: 50000, cryptoType: 'USDT', cryptoNetwork: 'Multi-Chain (TRC20, BEP20, BTC, ETH, SOL)', details: 'Fatura instantânea com QR Code e crédito automático em Blockchain' },
+      { id: 'usdt_trc20', name: 'USDT (TRC-20 Manual)', type: 'CRYPTO', account: 'TYd8S1kX9aPz2mQqR4vW7tL0uJ3bC5nE', icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 10, maxWithdraw: 50000, cryptoType: 'USDT', cryptoNetwork: 'TRC20', details: 'Rede TRON (TRC20) • Depósito manual com comprovativo' },
       { id: 'pix_cakto', name: 'PIX Automático (Brasil)', type: 'PIX', account: 'pix@cryptonbet.com', icon: 'https://images.unsplash.com/photo-1613243555988-441166d4d6fd?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 5, maxWithdraw: 50000, details: 'Depósito instantâneo via PIX com aprovação em tempo real' },
       { id: 'unitel_money', name: 'Unitel Money', type: 'UNITEL_MONEY', account: '923000000', icon: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 500, maxWithdraw: 500000, entityNumber: '00123', referenceNumber: '923000000', details: 'Pagamento via Unitel Money (Entidade e Referência)' },
       { id: 'multicaixa', name: 'Multicaixa Express', type: 'BANK', account: 'AO06 0000 0000 0000 0000 0', icon: 'https://www.emisu.co.ao/static/logo-emisu-multicaixa-express.png', isActive: true, minDeposit: 500, maxWithdraw: 500000, details: 'Transferência Bancária / Multicaixa Express' }
@@ -162,6 +163,15 @@ const App: React.FC = () => {
       receiverName: 'CryptonBet Brasil',
       exchangeRate: 5.85,
       environment: 'sandbox'
+    },
+    plisio: {
+      enabled: true,
+      secretKey: '',
+      whiteLabel: true,
+      environment: 'sandbox',
+      defaultCurrency: 'USDT_TRX',
+      acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'USDT_ETH', 'BTC', 'ETH', 'SOL', 'TRX', 'LTC', 'DOGE', 'BNB', 'TON'],
+      depositBonusPercent: 5
     }
   });
 
@@ -273,6 +283,28 @@ const App: React.FC = () => {
       if (saved) {
         const parsed = JSON.parse(saved);
         let mutated = false;
+
+        // Ensure Plisio Crypto is always registered and available
+        if (!parsed.paymentMethods?.some((m: any) => m.id === 'plisio_crypto')) {
+          parsed.paymentMethods = [
+            { 
+              id: 'plisio_crypto', 
+              name: '⚡ Cripto Automático (Plisio)', 
+              type: 'CRYPTO', 
+              account: 'Plisio Crypto Gateway', 
+              icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', 
+              isActive: true, 
+              minDeposit: 5, 
+              maxWithdraw: 50000, 
+              cryptoType: 'USDT', 
+              cryptoNetwork: 'Multi-Chain (TRC20, BEP20, BTC, ETH, SOL, TRX, LTC, DOGE)', 
+              details: 'Fatura instantânea com QR Code e crédito automático na Blockchain' 
+            },
+            ...(parsed.paymentMethods || [])
+          ];
+          mutated = true;
+        }
+
         if (!parsed.paymentMethods?.some((m: any) => m.type === 'PIX' || m.id === 'pix_cakto')) {
           parsed.paymentMethods = [
             ...(parsed.paymentMethods || []),
@@ -302,6 +334,18 @@ const App: React.FC = () => {
             receiverName: 'CryptonBet Brasil',
             exchangeRate: 5.85,
             environment: 'sandbox'
+          };
+          mutated = true;
+        }
+        if (!parsed.plisio) {
+          parsed.plisio = {
+            enabled: true,
+            secretKey: '',
+            whiteLabel: true,
+            environment: 'sandbox',
+            defaultCurrency: 'USDT_TRX',
+            acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'USDT_ETH', 'BTC', 'ETH', 'SOL', 'TRX', 'LTC', 'DOGE', 'BNB', 'TON'],
+            depositBonusPercent: 5
           };
           mutated = true;
         }
@@ -600,6 +644,12 @@ const App: React.FC = () => {
     setTimeout(() => setAutoOpenCreateAdToken(false), 500);
   };
 
+  const handleOpenDeposit = () => {
+    soundService.playUISelect();
+    setViewingUser(null);
+    setView('PROFILE');
+  };
+
   const renderView = () => {
     if (settings.maintenanceMode && user?.role !== 'ADMIN' && !['LOGIN', 'REGISTER'].includes(view)) {
       return <MaintenanceView />;
@@ -614,7 +664,7 @@ const App: React.FC = () => {
       case 'REFUND': return <RefundView onBack={() => setView('LOGIN')} />;
       case 'SUCCESS': return <SuccessView onGoHome={() => setView('HOME')} onGoWallet={() => setView('PROFILE')} />;
       case 'FAILURE': return <FailureView onRetry={() => setView('P2P')} onGoHome={() => setView('HOME')} onSupport={() => setView('P2P')} />;
-      case 'HOME': return <HomeView balance={activeBalance} isDemo={isDemo} onSelectGame={handleSelectGame} userName={user?.name || 'Piloto'} onGoToProfile={() => { setViewingUser(null); setView('PROFILE'); }} />;
+      case 'HOME': return <HomeView balance={activeBalance} isDemo={isDemo} onSelectGame={handleSelectGame} userName={user?.name || 'Piloto'} onGoToProfile={() => { setViewingUser(null); setView('PROFILE'); }} onOpenDeposit={handleOpenDeposit} />;
       case 'PROFILE': return <ProfileView balance={activeBalance} user={viewingUser || user!} currentUser={user} isDemo={isDemo} onToggleDemo={setIsDemo} onUpdateBalance={updateBalance} onBack={() => { setViewingUser(null); setView('HOME'); }} onLogout={() => authService.logout()} onUpdateUser={handleUpdateProfile} onSelectGame={handleSelectGame} viewingUser={viewingUser} />;
       case 'AVIATOR': return <AviatorView balance={activeBalance} isDemo={isDemo} onUpdateBalance={updateBalance} onBack={() => setView('HOME')} />;
       case 'ROULETTE': return <RouletteView balance={activeBalance} isDemo={isDemo} onUpdateBalance={updateBalance} onBack={() => setView('HOME')} />;
@@ -801,6 +851,7 @@ const App: React.FC = () => {
             onSelectGame={handleSelectGame}
             onGoToProfile={() => { setViewingUser(null); setView('PROFILE'); }}
             onToggleDemo={setIsDemo}
+            onOpenDeposit={handleOpenDeposit}
             onOpenCreateAd={handleOpenCreateAd}
           />
         )}

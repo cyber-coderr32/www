@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { UserAccount, TransactionRequest, GlobalSettings, PaymentMethod, P2POffer } from '../types';
 import { soundService } from '../services/soundService';
 import { caktoService } from '../services/caktoService';
+import { plisioService, SUPPORTED_PLISIO_CRYPTOS } from '../services/plisioService';
 import { db } from '../services/firebase';
 import { collection, getDocs, doc, updateDoc, setDoc, query, limit, deleteDoc } from 'firebase/firestore';
 import { 
@@ -476,6 +477,52 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
     }
     saveSettings({ ...settings, paymentMethods: newMethods });
     setEditingMethod(null);
+  };
+
+  const [plisioBalances, setPlisioBalances] = useState<any | null>(null);
+  const [isTestingPlisio, setIsTestingPlisio] = useState(false);
+
+  const handleTestPlisio = async () => {
+    setIsTestingPlisio(true);
+    soundService.playUISelect();
+    showNotification("Testando conexão com Plisio Crypto Gateway...");
+    try {
+      const res = await plisioService.checkStatus();
+      const bal = await plisioService.getAccountBalance();
+      setPlisioBalances(bal);
+      if (res.configured) {
+        soundService.playWin();
+        showNotification(`✅ Plisio Conectado com Sucesso! Ambiente: ${res.environment || 'Produção'}`);
+      } else {
+        soundService.playTick();
+        showNotification(`ℹ️ Plisio em Modo Sandbox / Simulação. Defina PLISIO_SECRET_KEY no .env para transações reais na Blockchain.`);
+      }
+    } catch (e: any) {
+      showNotification(`Erro ao testar Plisio: ${e.message}`);
+    } finally {
+      setIsTestingPlisio(false);
+    }
+  };
+
+  const handleSimulatePlisioWebhook = async () => {
+    soundService.playUISelect();
+    showNotification("Disparando webhook de teste Plisio...");
+    try {
+      const res = await plisioService.simulateWebhook({
+        currency: 'USDT_TRX',
+        amount: '50.00',
+        userId: users[0]?.id || 'admin_test'
+      });
+      if (res.status === 'success') {
+        soundService.playWin();
+        showNotification("⚡ Webhook Plisio simulado com sucesso! Saldo creditado e evento registrado.");
+        fetchWebhookLogs();
+      } else {
+        showNotification(`Falha na simulação: ${res.message}`);
+      }
+    } catch (e: any) {
+      showNotification(`Erro: ${e.message}`);
+    }
   };
 
   const handleTestCakto = async () => {
@@ -1722,6 +1769,234 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Salvar Cakto API</span>
+                </button>
+              </div>
+            </div>
+
+            {/* CONFIGURAÇÃO DO GATEWAY PLISIO (CRIPTOMOEDAS & MULTI-CHAIN BLOCKCHAIN) */}
+            <div className="bg-gradient-to-br from-[#090e17] via-[#0e1626] to-[#049444]/20 p-6 sm:p-8 rounded-3xl border border-[#FFCC00]/40 shadow-2xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-500 border border-amber-400/40 flex items-center justify-center text-2xl shadow-lg shadow-amber-500/20 text-black font-black">
+                    ⚡
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black uppercase text-white tracking-wide flex items-center gap-2">
+                      <span>Plisio Crypto Gateway</span>
+                      <span className="text-[10px] bg-gradient-to-r from-amber-500 to-yellow-500 text-black px-2.5 py-0.5 rounded-full uppercase font-black tracking-widest">
+                        Blockchain Multi-Chain
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400 font-medium">
+                      Gateway automatizado para depósitos e levantamentos em USDT (TRC20, BEP20, ERC20), BTC, ETH, SOL, TRX, LTC, DOGE, BNB e TON
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleTestPlisio}
+                    disabled={isTestingPlisio}
+                    className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer border border-white/10 shadow-md"
+                  >
+                    <RefreshCw className={`w-4 h-4 text-amber-400 ${isTestingPlisio ? 'animate-spin' : ''}`} />
+                    <span>Testar Conexão Plisio</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSimulatePlisioWebhook}
+                    className="px-4 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-md"
+                  >
+                    <Zap className="w-4 h-4 text-amber-400" />
+                    <span>Simular IPN Depósito</span>
+                  </button>
+                  
+                  <label className="flex items-center gap-2 cursor-pointer bg-black/40 px-3.5 py-2.5 rounded-xl border border-white/10">
+                    <input
+                      type="checkbox"
+                      checked={settings.plisio?.enabled !== false}
+                      onChange={(e) => saveSettings({
+                        ...settings,
+                        plisio: { ...(settings.plisio || { secretKey: '', whiteLabel: true, environment: 'sandbox', defaultCurrency: 'USDT_TRX', acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'BTC', 'ETH', 'SOL', 'TRX'], depositBonusPercent: 5 }), enabled: e.target.checked }
+                      })}
+                      className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
+                    />
+                    <span className="text-xs font-black uppercase text-white">Ativar Plisio Crypto</span>
+                  </label>
+                </div>
+              </div>
+
+              {plisioBalances && (
+                <div className="bg-black/60 p-4 rounded-2xl border border-amber-500/30 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {Object.entries(plisioBalances).slice(0, 6).map(([curr, bal]: [string, any]) => (
+                    <div key={curr} className="bg-white/5 p-3 rounded-xl border border-white/5 text-center">
+                      <span className="text-[10px] font-black text-slate-400 uppercase block">{curr}</span>
+                      <span className="text-xs font-mono font-bold text-amber-400">{typeof bal === 'object' ? (bal.balance || 0) : bal}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase block mb-1.5">
+                    Ambiente Plisio
+                  </label>
+                  <select
+                    value={settings.plisio?.environment || 'sandbox'}
+                    onChange={(e) => saveSettings({
+                      ...settings,
+                      plisio: { ...(settings.plisio || { secretKey: '', whiteLabel: true, defaultCurrency: 'USDT_TRX', acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'BTC', 'ETH', 'SOL', 'TRX'], depositBonusPercent: 5, enabled: true }), environment: e.target.value as any }
+                    })}
+                    className="w-full bg-black/60 border border-white/10 rounded-2xl px-4 py-3 text-white font-bold text-xs outline-none focus:border-amber-400 cursor-pointer"
+                  >
+                    <option value="sandbox">🟡 Sandbox / Simulação (Testes sem gastar crypto)</option>
+                    <option value="production">🟢 Produção (Blockchain Real Plisio.net)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-amber-400 uppercase block mb-1.5">
+                    Moeda Padrão de Depósito Cripto
+                  </label>
+                  <select
+                    value={settings.plisio?.defaultCurrency || 'USDT_TRX'}
+                    onChange={(e) => saveSettings({
+                      ...settings,
+                      plisio: { ...(settings.plisio || { secretKey: '', whiteLabel: true, environment: 'sandbox', acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'BTC', 'ETH', 'SOL', 'TRX'], depositBonusPercent: 5, enabled: true }), defaultCurrency: e.target.value }
+                    })}
+                    className="w-full bg-black/60 border border-white/10 rounded-2xl px-4 py-3 text-white font-bold text-xs outline-none focus:border-amber-400 cursor-pointer"
+                  >
+                    {SUPPORTED_PLISIO_CRYPTOS.map(c => (
+                      <option key={c.code} value={c.code}>
+                        {c.icon} {c.name} ({c.network})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-emerald-400 uppercase block mb-1.5">
+                    Bónus de Depósito Cripto (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="100"
+                      value={settings.plisio?.depositBonusPercent ?? 5}
+                      onChange={(e) => saveSettings({
+                        ...settings,
+                        plisio: { ...(settings.plisio || { secretKey: '', whiteLabel: true, environment: 'sandbox', defaultCurrency: 'USDT_TRX', acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'BTC', 'ETH', 'SOL', 'TRX'], enabled: true }), depositBonusPercent: Number(e.target.value) || 0 }
+                      })}
+                      className="w-full bg-black/60 border border-white/10 rounded-2xl px-4 py-3 text-white font-mono text-xs font-bold outline-none focus:border-emerald-400"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-400">% BÓNUS</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* CRIPTOMOEDAS ATIVAS */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-300 uppercase block tracking-wider">
+                  Criptomoedas Aceitas na Plataforma ({SUPPORTED_PLISIO_CRYPTOS.length} Disponíveis)
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {SUPPORTED_PLISIO_CRYPTOS.map(c => {
+                    const isAccepted = (settings.plisio?.acceptedCurrencies || ['USDT_TRX', 'USDT_BSC', 'BTC', 'ETH', 'SOL', 'TRX', 'LTC', 'DOGE', 'BNB', 'TON']).includes(c.code);
+                    return (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => {
+                          const current = settings.plisio?.acceptedCurrencies || ['USDT_TRX', 'USDT_BSC', 'BTC', 'ETH', 'SOL', 'TRX', 'LTC', 'DOGE', 'BNB', 'TON'];
+                          const next = isAccepted ? current.filter(x => x !== c.code) : [...current, c.code];
+                          saveSettings({
+                            ...settings,
+                            plisio: {
+                              ...(settings.plisio || { secretKey: '', whiteLabel: true, environment: 'sandbox', defaultCurrency: 'USDT_TRX', depositBonusPercent: 5, enabled: true }),
+                              acceptedCurrencies: next
+                            }
+                          });
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${isAccepted ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm' : 'bg-black/40 text-slate-500 border-white/5 opacity-60'}`}
+                      >
+                        <span>{c.icon}</span>
+                        <span>{c.name}</span>
+                        <span className="text-[9px] opacity-70">({c.network})</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ml-1 ${isAccepted ? 'bg-amber-400 text-black' : 'bg-white/10 text-slate-400'}`}>
+                          {isAccepted ? '✓' : '+'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* GUIA DE INTEGRAÇÃO PLISIO & WEBHOOK IPN */}
+              <div className="bg-gradient-to-r from-amber-500/10 via-black/40 to-yellow-500/10 p-5 rounded-2xl border border-amber-500/30 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                    <span>⚡ Guia de Conexão: Plisio IPN (Instant Payment Notification)</span>
+                    <span className="text-[9px] bg-amber-500 text-black font-black px-2 py-0.5 rounded-full uppercase">Automatizado</span>
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Os depósitos dos jogadores geram faturas instantâneas com QR Code. Quando a rede Blockchain atinge o número mínimo de confirmações, o Plisio envia um Webhook IPN e a plataforma credita a conta do jogador automaticamente.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  <div className="bg-black/60 p-3.5 rounded-xl border border-white/10 space-y-1.5">
+                    <span className="text-[10px] font-black text-amber-400 uppercase block">1. URL de Callback / Webhook IPN</span>
+                    <p className="text-[11px] text-slate-400">No painel do Plisio.net em <b className="text-white">API &gt; Settings</b> ou no perfil da loja, defina a URL de retorno:</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <code className="text-[11px] bg-amber-950/80 text-amber-300 px-2.5 py-1.5 rounded-lg border border-amber-500/30 font-mono flex-1 truncate select-all">
+                        {window.location.origin}/api/plisio/webhook
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}/api/plisio/webhook`);
+                          showNotification("URL do Webhook Plisio copiada!");
+                        }}
+                        className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0"
+                      >
+                        Copiar URL
+                      </button>
+                    </div>
+                  </div>
+                  <div className="bg-black/60 p-3.5 rounded-xl border border-white/10 space-y-1.5">
+                    <span className="text-[10px] font-black text-emerald-400 uppercase block">2. Chave Secreta (PLISIO_SECRET_KEY)</span>
+                    <p className="text-[11px] text-slate-400">Obtenha sua Chave Secreta no Plisio.net e guarde de forma segura no arquivo <code className="bg-black/80 px-1 py-0.5 rounded text-emerald-300 font-mono">.env</code> do servidor:</p>
+                    <div className="mt-2">
+                      <code className="text-[11px] bg-emerald-950/80 text-emerald-300 font-bold px-2.5 py-1.5 rounded border border-emerald-500/30 font-mono block text-center select-all">
+                        PLISIO_SECRET_KEY=sua_chave_secreta_aqui
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black/40 p-4 sm:p-5 rounded-2xl border border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3 text-xs text-slate-300">
+                  <CheckCircle2 className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span>
+                    Ao ativar o Plisio, o saldo dos jogadores é transacionado diretamente em criptomoedas com QR Code automático e conversão para o saldo USDT de apostas.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveSettings({ ...settings });
+                    soundService.playWin();
+                    showNotification("Configurações do Gateway Plisio Crypto salvas e ativadas com sucesso!");
+                  }}
+                  className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black rounded-xl font-black text-xs uppercase tracking-wider transition-all shrink-0 shadow-lg shadow-amber-500/30 cursor-pointer flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Salvar Plisio Gateway</span>
                 </button>
               </div>
             </div>

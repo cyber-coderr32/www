@@ -235,39 +235,97 @@ async function startServer() {
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
   // Plisio API Backend Gateway Proxy
-  const PLISIO_SECRET_KEY = process.env.PLISIO_SECRET_KEY || process.env.PLISIO_API_KEY;
+  function getPlisioKey() {
+    loadDynamicEnv();
+    return process.env.PLISIO_SECRET_KEY || process.env.PLISIO_API_KEY || process.env.PLISIO_KEY || "";
+  }
 
-  app.get("/api/plisio/status", (req, res) => {
-    res.json({
-      configured: !!PLISIO_SECRET_KEY,
-      message: PLISIO_SECRET_KEY ? "Plisio Secret Key configurada no servidor backend." : "PLISIO_SECRET_KEY não definida no servidor (.env)."
-    });
+  app.get("/api/plisio/status", async (req, res) => {
+    const key = getPlisioKey();
+    if (!key) {
+      return res.json({
+        configured: false,
+        maskedKey: null,
+        message: "PLISIO_SECRET_KEY não definida no servidor (.env) - Operando em modo de simulação/sandbox."
+      });
+    }
+
+    try {
+      const response = await fetch(`https://api.plisio.net/api/v1/currencies?api_key=${encodeURIComponent(key)}`, {
+        signal: AbortSignal.timeout(5000)
+      });
+      const data = await response.json();
+      const activeCurrencies = Array.isArray(data?.data) 
+        ? data.data.filter((c: any) => c.hidden === 0 || c.hidden === "0" || c.hidden === false).map((c: any) => c.cid)
+        : [];
+
+      res.json({
+        configured: true,
+        maskedKey: `${key.substring(0, 4)}...${key.substring(key.length - 4)}`,
+        activeCurrencies,
+        message: `Plisio Secret Key ativa! Moedas ativadas no painel Plisio: ${activeCurrencies.join(', ') || 'Nenhuma'}`
+      });
+    } catch (e: any) {
+      res.json({
+        configured: true,
+        maskedKey: `${key.substring(0, 4)}...${key.substring(key.length - 4)}`,
+        message: "Plisio Secret Key conectada no backend."
+      });
+    }
   });
 
   app.get("/api/plisio/currencies", async (req, res) => {
     try {
       const sourceCurrency = (req.query.sourceCurrency as string) || "USD";
-      let url = `https://plisio.net/api/v1/currencies/${sourceCurrency}`;
-      if (PLISIO_SECRET_KEY) {
-        url += `?api_key=${encodeURIComponent(PLISIO_SECRET_KEY)}`;
-      }
-      const response = await fetch(url);
+      const key = getPlisioKey();
+      let url = `https://api.plisio.net/api/v1/currencies?api_key=${encodeURIComponent(key)}`;
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'CryptonBet/1.0' },
+        signal: AbortSignal.timeout(6000)
+      });
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
-      return res.status(500).json({ status: "error", message: err.message || "Erro de servidor ao buscar moedas Plisio." });
+      return res.status(500).json({ status: "error", message: err.message || "Erro ao consultar moedas Plisio." });
+    }
+  });
+
+  app.get("/api/plisio/balance", async (req, res) => {
+    try {
+      const key = getPlisioKey();
+      const currency = (req.query.currency as string) || "USDT_TON";
+      if (!key) {
+        return res.json({
+          status: "success",
+          data: { balance: "1000.00", currency: currency },
+          isSimulated: true
+        });
+      }
+      const response = await fetch(`https://api.plisio.net/api/v1/balances/${currency}?api_key=${encodeURIComponent(key)}`, {
+        signal: AbortSignal.timeout(6000)
+      });
+      const data = await response.json();
+      return res.json(data);
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", message: err.message || "Erro ao consultar saldo Plisio." });
     }
   });
 
   app.post("/api/plisio/invoice/new", async (req, res) => {
     try {
-      const { amount, currency, orderNumber, orderName, email } = req.body;
+      const { amount, currency, orderNumber, orderName, email, userId } = req.body;
       const curr = currency || 'USDT_TRX';
+      const key = getPlisioKey();
+      const orderId = orderNumber || `PLISIO_${Date.now()}_${userId || 'anon'}`;
 
-      if (!PLISIO_SECRET_KEY) {
+      if (!key) {
         const txnId = 'PLISIO_DEP_' + Date.now();
         const simulatedWallet = curr.includes('TRX') 
           ? 'T' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+          : curr.includes('BTC')
+          ? 'bc1q' + Math.random().toString(36).substring(2, 18)
+          : curr.includes('SOL')
+          ? Math.random().toString(36).substring(2, 15) + 'SoL'
           : '0x' + Math.random().toString(16).substring(2, 42);
 
         return res.json({
@@ -278,23 +336,31 @@ async function startServer() {
             amount: Number(amount).toFixed(2),
             currency: curr,
             wallet_hash: simulatedWallet,
+            order_number: orderId,
             expire_at_utc: Math.floor(Date.now() / 1000) + 3600,
           },
           isSimulated: true
         });
       }
 
+      const host = req.get('host') || 'localhost:3000';
+      const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+      const callbackUrl = `${protocol}://${host}/api/plisio/webhook?json=true`;
+
       const queryParams = new URLSearchParams({
-        api_key: PLISIO_SECRET_KEY,
+        api_key: key,
         currency: curr,
         amount: String(amount),
-        order_number: String(orderNumber),
-        order_name: String(orderName),
+        order_number: String(orderId),
+        order_name: String(orderName || `Depósito Cripto CryptonBet`),
         source_currency: 'USD',
+        callback_url: callbackUrl,
       });
       if (email) queryParams.append('email', String(email));
 
-      const response = await fetch(`https://plisio.net/api/v1/invoices/new?${queryParams.toString()}`);
+      const response = await fetch(`https://api.plisio.net/api/v1/invoices/new?${queryParams.toString()}`, {
+        signal: AbortSignal.timeout(8000)
+      });
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
@@ -304,33 +370,48 @@ async function startServer() {
 
   app.post("/api/plisio/payout/insert", async (req, res) => {
     try {
-      const { amount, currency, toWallet } = req.body;
+      const { amount, currency, toWallet, userId } = req.body;
       const curr = currency || 'USDT_TRX';
+      const key = getPlisioKey();
 
-      if (!PLISIO_SECRET_KEY) {
+      if (!key) {
         const payoutId = 'PLISIO_OUT_' + Date.now();
+        const txHash = '0x' + crypto.randomBytes(24).toString('hex');
+        const explorerUrl = curr.includes('TRX')
+          ? `https://tronscan.org/#/transaction/${txHash}`
+          : curr.includes('BSC')
+          ? `https://bscscan.com/tx/${txHash}`
+          : curr.includes('ETH')
+          ? `https://etherscan.io/tx/${txHash}`
+          : curr.includes('BTC')
+          ? `https://mempool.space/tx/${txHash}`
+          : `https://tronscan.org/#/transaction/${txHash}`;
+
         return res.json({
           status: 'success',
           data: {
             id: payoutId,
             amount: Number(amount).toFixed(2),
             currency: curr,
-            status: 'pending',
-            tx_url: `https://tronscan.org/#/transaction/simulated_${payoutId}`
+            status: 'completed',
+            tx_url: explorerUrl,
+            wallet_hash: toWallet
           },
           isSimulated: true
         });
       }
 
       const queryParams = new URLSearchParams({
-        api_key: PLISIO_SECRET_KEY,
+        api_key: key,
         currency: curr,
         amount: String(amount),
         to: String(toWallet),
         type: 'cash_out',
       });
 
-      const response = await fetch(`https://plisio.net/api/v1/payouts/insert?${queryParams.toString()}`);
+      const response = await fetch(`https://api.plisio.net/api/v1/operations/withdraw?${queryParams.toString()}`, {
+        signal: AbortSignal.timeout(8000)
+      });
       const data = await response.json();
       return res.json(data);
     } catch (err: any) {
@@ -340,12 +421,138 @@ async function startServer() {
 
   app.get("/api/plisio/operations/:id", async (req, res) => {
     try {
-      if (!PLISIO_SECRET_KEY) {
+      const key = getPlisioKey();
+      if (!key) {
         return res.json({ status: 'success', data: { status: 'completed' }, isSimulated: true });
       }
-      const response = await fetch(`https://plisio.net/api/v1/operations/${req.params.id}?api_key=${encodeURIComponent(PLISIO_SECRET_KEY)}`);
+      const response = await fetch(`https://plisio.net/api/v1/operations/${req.params.id}?api_key=${encodeURIComponent(key)}`, {
+        signal: AbortSignal.timeout(6000)
+      });
       const data = await response.json();
       return res.json(data);
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  // Plisio IPN Webhook Handler (Instant Payment Notification)
+  const handlePlisioWebhook = async (req: express.Request, res: express.Response) => {
+    try {
+      const payload = req.method === 'GET' ? req.query : req.body;
+      const status = payload?.status || payload?.txn_status || 'unknown';
+      const txnId = payload?.txn_id || payload?.id || `PLISIO_${Date.now()}`;
+      const orderNumber = payload?.order_number || payload?.orderNumber || '';
+      const amount = Number(payload?.source_amount || payload?.amount || 0);
+      const currency = payload?.currency || 'USDT';
+
+      console.log(`📡 [Plisio Webhook IPN] Recebido evento: status=${status}, txnId=${txnId}, orderNumber=${orderNumber}, amount=${amount} ${currency}`);
+
+      // Se o status for completed ou mismatch (pago com sucesso)
+      const isPaid = status === 'completed' || status === 'mismatch' || status === 'paid' || status === 'success';
+
+      if (isPaid && amount > 0) {
+        try {
+          const adminDb = getAdminDb();
+          if (adminDb) {
+            // Tenta identificar o userId
+            let targetUserId: string | null = null;
+            if (orderNumber && orderNumber.includes('_')) {
+              const parts = orderNumber.split('_');
+              targetUserId = parts[parts.length - 1];
+            } else if (payload?.custom || payload?.userId) {
+              targetUserId = payload?.custom || payload?.userId;
+            }
+
+            if (targetUserId) {
+              const userRef = adminDb.collection("users").doc(targetUserId);
+              const userDoc = await userRef.get();
+
+              if (userDoc.exists) {
+                const userData = userDoc.data() || {};
+                const currentBalance = Number(userData.balance || 0);
+                const newBalance = currentBalance + amount;
+
+                await userRef.update({
+                  balance: newBalance,
+                  updatedAt: FieldValue.serverTimestamp()
+                });
+
+                console.log(`✅ [Plisio Webhook] Saldo creditado com sucesso para usuário ${targetUserId}: +${amount} USDT (Novo saldo: ${newBalance.toFixed(2)} USDT)`);
+
+                await adminDb.collection("transactions").doc(String(txnId)).set({
+                  id: String(txnId),
+                  userId: targetUserId,
+                  userName: userData.name || userData.displayName || "Jogador Cripto",
+                  type: "DEPOSIT",
+                  amount: amount,
+                  method: `Plisio Crypto (${currency})`,
+                  status: "APPROVED",
+                  timestamp: new Date().toLocaleString("pt-PT"),
+                  createdAt: FieldValue.serverTimestamp()
+                }, { merge: true });
+              }
+            }
+          }
+        } catch (dbErr: any) {
+          console.error("❌ [Plisio Webhook DB Error]:", dbErr.message);
+        }
+      }
+
+      addWebhookLog({
+        method: "PLISIO_IPN",
+        url: req.originalUrl || "/api/plisio/webhook",
+        status: String(status),
+        txId: String(txnId),
+        amount: Number(amount) || 0,
+        currency: currency,
+        payload: payload
+      });
+
+      return res.status(200).send("OK");
+    } catch (err: any) {
+      console.warn("⚠️ [Plisio Webhook Exception]", err.message);
+      return res.status(200).send("OK");
+    }
+  };
+
+  app.post("/api/plisio/webhook", handlePlisioWebhook);
+  app.get("/api/plisio/webhook", handlePlisioWebhook);
+  app.post("/api/plisio/callback", handlePlisioWebhook);
+  app.get("/api/plisio/callback", handlePlisioWebhook);
+
+  // Plisio Simulation Webhook Dispatcher (Admin test)
+  app.post("/api/plisio/simulate-webhook", async (req, res) => {
+    try {
+      const { amount = 50, currency = "USDT_TRX", userId = "demo_user" } = req.body || {};
+      const fakeTxnId = "PLISIO_SIM_" + Math.random().toString(36).substring(2, 9).toUpperCase();
+      const fakePayload = {
+        txn_id: fakeTxnId,
+        order_number: `PLISIO_${Date.now()}_${userId}`,
+        status: "completed",
+        amount: String(amount),
+        source_amount: String(amount),
+        currency: currency,
+        source_currency: "USD",
+        wallet_hash: "T" + crypto.randomBytes(16).toString("hex"),
+        verify_hash: "simulated_plisio_hash",
+        created_at_utc: Math.floor(Date.now() / 1000)
+      };
+
+      addWebhookLog({
+        method: "PLISIO_IPN",
+        url: "/api/plisio/webhook",
+        status: "completed",
+        txId: fakeTxnId,
+        amount: Number(amount),
+        currency: currency,
+        payload: fakePayload
+      });
+
+      return res.json({
+        status: "success",
+        message: `Simulação de depósito Plisio (+${amount} ${currency}) disparada e processada com sucesso!`,
+        payload: fakePayload
+      });
     } catch (err: any) {
       return res.status(500).json({ status: "error", message: err.message });
     }

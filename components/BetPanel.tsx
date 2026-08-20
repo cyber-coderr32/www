@@ -193,7 +193,7 @@ export const SingleConsolePanel: React.FC<{
             </div>
           ) : hasActiveBet && status === GameStatus.BETTING ? (
             <button
-              onClick={() => onCancel && onCancel()}
+              onClick={() => onCancelBet && onCancelBet()}
               className="w-full h-full bg-red-600/80 hover:bg-red-600 active:scale-95 text-white font-black rounded-xl sm:rounded-2xl border-b-4 border-red-800 shadow-lg flex flex-col items-center justify-center p-1 cursor-pointer transition-all"
             >
               <span className="text-xs uppercase tracking-wider font-extrabold">CANCELAR</span>

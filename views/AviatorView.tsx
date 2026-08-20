@@ -991,7 +991,7 @@ const AviatorView: React.FC<AviatorViewProps> = ({ balance, isDemo, onUpdateBala
           />
 
           {/* SEÇÃO AO VIVO DE APOSTADORES (DIRETO ABAIXO DO PAINEL DO AVIATOR) */}
-          <section className="mt-3 p-3 sm:p-4 bg-[#0b1219] border-t border-white/10 rounded-t-2xl sm:rounded-t-3xl shadow-2xl space-y-3 shrink-0">
+          <section className="mt-3 p-3 sm:p-4 pb-20 sm:pb-4 bg-[#0b1219] border-t border-white/10 rounded-t-2xl sm:rounded-t-3xl shadow-2xl space-y-3 shrink-0">
             {/* Header com Tabs e Resumo Ao Vivo */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-white/5 pb-2.5">
               <div className="flex items-center gap-2">

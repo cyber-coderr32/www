@@ -366,7 +366,7 @@ const CrashView: React.FC<CrashViewProps> = ({ balance, isDemo = false, onUpdate
       <main className="flex-1 flex flex-col lg:flex-row p-2 sm:p-3 gap-2 sm:gap-3 overflow-hidden relative min-h-0">
         
         {/* Lado Esquerdo / Central: Arena de Voo com Emoji Boca Aberta */}
-        <div className="flex-1 bg-[#131d27] rounded-2xl md:rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden flex flex-col items-center justify-center min-h-[220px] sm:min-h-[300px] h-full">
+        <div className="flex-1 bg-[#131d27] rounded-2xl md:rounded-[2.5rem] border border-white/10 shadow-2xl relative overflow-hidden flex flex-col items-center justify-center min-h-[180px] sm:min-h-[300px] h-full">
           
           {/* Background Grid Limpo & Nuvens */}
           <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:24px_24px]" />
@@ -752,7 +752,7 @@ const CrashView: React.FC<CrashViewProps> = ({ balance, isDemo = false, onUpdate
       </AnimatePresence>
 
       {/* Rodapé de Ação / Painel de Apostas Fixo no Fundo */}
-      <footer className="bg-[#0b1219] p-2.5 sm:p-3 border-t border-white/10 shadow-2xl shrink-0 z-30">
+      <footer className="bg-[#0b1219] p-2.5 sm:p-3 pb-20 sm:pb-3 border-t border-white/10 shadow-2xl shrink-0 z-30">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-center">
           
           <div className="flex-1 w-full grid grid-cols-2 gap-2">

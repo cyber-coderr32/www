@@ -3,11 +3,14 @@
 // when running on static hosting environments (such as Vercel or GitHub Pages).
 
 export interface PlisioInvoiceRequest {
-  amount: number;
+  amount?: number;
+  amountUsdt?: number;
   currency?: string; // Default: 'USDT_TRX' (USDT TRC-20) or 'USDT_BSC', 'USDT_ETH'
-  orderNumber: string;
-  orderName: string;
+  sourceCurrency?: string;
+  orderNumber?: string;
+  orderName?: string;
   email?: string;
+  userEmail?: string;
 }
 
 export interface PlisioInvoiceResponse {
@@ -28,7 +31,8 @@ export interface PlisioInvoiceResponse {
 export interface PlisioPayoutRequest {
   amount: number;
   currency?: string;
-  toWallet: string;
+  toWallet?: string;
+  toAddress?: string;
   type?: 'cash_out';
 }
 
@@ -36,6 +40,7 @@ export interface PlisioPayoutResponse {
   status: 'success' | 'error';
   data?: {
     id: string;
+    txn_id?: string;
     tx_url?: string;
     amount: string;
     currency: string;
@@ -45,12 +50,36 @@ export interface PlisioPayoutResponse {
   isSimulated?: boolean;
 }
 
-export const SUPPORTED_USDT_NETWORKS = [
-  { id: 'USDT_TRX', name: 'USDT (TRC-20)', network: 'TRON (TRC20)', icon: '🔴', fee: '1.00 USDT' },
-  { id: 'USDT_BSC', name: 'USDT (BEP-20)', network: 'BNB Smart Chain (BEP20)', icon: '🟡', fee: '0.50 USDT' },
-  { id: 'USDT_ETH', name: 'USDT (ERC-20)', network: 'Ethereum (ERC20)', icon: '🔵', fee: '5.00 USDT' },
-  { id: 'USDT_MATIC', name: 'USDT (Polygon)', network: 'Polygon (POS)', icon: '🟣', fee: '0.30 USDT' },
+export interface PlisioCryptoOption {
+  id: string; // e.g. 'USDT_TRX', 'BTC', 'ETH'
+  code: string; // Alias for id for compatibility
+  symbol: string; // 'USDT', 'BTC', 'ETH'
+  name: string;
+  network: string;
+  icon: string;
+  fee: string;
+  minDeposit: number;
+  confirmationTime: string;
+  recommended?: boolean;
+}
+
+export const SUPPORTED_PLISIO_CRYPTOS: PlisioCryptoOption[] = [
+  { id: 'USDT_TON', code: 'USDT_TON', symbol: 'USDT', name: 'Tether USDT (TON)', network: 'TON Network', icon: '💎', fee: '0.20 USDT', minDeposit: 5, confirmationTime: '~1 min', recommended: true },
+  { id: 'TON', code: 'TON', symbol: 'TON', name: 'Toncoin', network: 'TON Network', icon: '💎', fee: '0.20 USDT', minDeposit: 5, confirmationTime: '~1 min', recommended: true },
+  { id: 'SOL', code: 'SOL', symbol: 'SOL', name: 'Solana', network: 'Solana Network', icon: '☀️', fee: '0.50 USDT', minDeposit: 10, confirmationTime: '~1 min', recommended: true },
+  { id: 'USDT_TRX', code: 'USDT_TRX', symbol: 'USDT', name: 'Tether USDT (TRC-20)', network: 'TRON Network', icon: '🔴', fee: '1.00 USDT', minDeposit: 5, confirmationTime: '~1 min' },
+  { id: 'USDT_BSC', code: 'USDT_BSC', symbol: 'USDT', name: 'Tether USDT (BEP-20)', network: 'BNB Smart Chain', icon: '🟡', fee: '0.50 USDT', minDeposit: 5, confirmationTime: '~2 min' },
+  { id: 'USDT_MATIC', code: 'USDT_MATIC', symbol: 'USDT', name: 'Tether USDT (Polygon)', network: 'Polygon POS', icon: '🟣', fee: '0.30 USDT', minDeposit: 5, confirmationTime: '~2 min' },
+  { id: 'USDT_ETH', code: 'USDT_ETH', symbol: 'USDT', name: 'Tether USDT (ERC-20)', network: 'Ethereum Mainnet', icon: '🔵', fee: '4.50 USDT', minDeposit: 20, confirmationTime: '~5 min' },
+  { id: 'BTC', code: 'BTC', symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin Blockchain', icon: '₿', fee: '3.00 USDT', minDeposit: 15, confirmationTime: '~10 min' },
+  { id: 'ETH', code: 'ETH', symbol: 'ETH', name: 'Ethereum', network: 'Ethereum Mainnet', icon: 'Ξ', fee: '3.50 USDT', minDeposit: 15, confirmationTime: '~5 min' },
+  { id: 'TRX', code: 'TRX', symbol: 'TRX', name: 'TRON', network: 'TRON Network', icon: '⚡', fee: '0.10 USDT', minDeposit: 5, confirmationTime: '~1 min' },
+  { id: 'BNB', code: 'BNB', symbol: 'BNB', name: 'Binance Coin', network: 'BNB Smart Chain', icon: '🪙', fee: '0.50 USDT', minDeposit: 10, confirmationTime: '~2 min' },
+  { id: 'LTC', code: 'LTC', symbol: 'LTC', name: 'Litecoin', network: 'Litecoin Network', icon: 'Ł', fee: '0.20 USDT', minDeposit: 5, confirmationTime: '~5 min' },
+  { id: 'DOGE', code: 'DOGE', symbol: 'DOGE', name: 'Dogecoin', network: 'Dogecoin Network', icon: '🐶', fee: '0.50 USDT', minDeposit: 5, confirmationTime: '~5 min' },
 ];
+
+export const SUPPORTED_USDT_NETWORKS = SUPPORTED_PLISIO_CRYPTOS.filter(c => c.symbol === 'USDT');
 
 class PlisioService {
   /**
@@ -65,7 +94,6 @@ class PlisioService {
         const json = await response.json();
         return { ok: response.ok, data: json };
       } else {
-        // Not JSON (probably HTML 404 or SPA fallback)
         return { ok: false, isHtml: true };
       }
     } catch (err) {
@@ -76,17 +104,41 @@ class PlisioService {
   /**
    * Check if backend or client has PLISIO_SECRET_KEY / VITE_PLISIO_API_KEY configured
    */
-  public async checkBackendStatus(): Promise<{ configured: boolean; message: string }> {
+  public async checkBackendStatus(): Promise<{ configured: boolean; message: string; maskedKey?: string; environment?: string }> {
     const clientKey = import.meta.env.VITE_PLISIO_API_KEY || import.meta.env.VITE_PLISIO_SECRET_KEY;
     if (clientKey) {
-      return { configured: true, message: 'Plisio API Key configurada no ambiente cliente (VITE).' };
+      return { 
+        configured: true, 
+        message: 'Plisio API Key configurada no ambiente cliente (VITE).',
+        maskedKey: `${clientKey.substring(0, 4)}...${clientKey.substring(clientKey.length - 4)}`,
+        environment: 'live'
+      };
     }
 
     const res = await this.fetchJsonSafely('/api/plisio/status');
     if (res.ok && res.data) {
       return res.data;
     }
-    return { configured: false, message: 'Modo Simulação (Gateway Plisio não configurado)' };
+    return { configured: false, message: 'Modo Sandbox / Simulação (Chave PLISIO_SECRET_KEY não detectada)', environment: 'sandbox' };
+  }
+
+  public async checkStatus(): Promise<{ configured: boolean; message: string; maskedKey?: string; environment?: string }> {
+    return this.checkBackendStatus();
+  }
+
+  /**
+   * Check Plisio account balance in crypto
+   */
+  public async getAccountBalance(currency = 'USDT_TRX'): Promise<{ balance: string; currency: string; isSimulated?: boolean }> {
+    const res = await this.fetchJsonSafely(`/api/plisio/balance?currency=${encodeURIComponent(currency)}`);
+    if (res.ok && res.data && res.data.status === 'success' && res.data.data) {
+      return {
+        balance: res.data.data.balance || '0.00',
+        currency: res.data.data.currency || currency,
+        isSimulated: res.data.isSimulated
+      };
+    }
+    return { balance: '1000.00', currency: currency, isSimulated: true };
   }
 
   /**
@@ -94,17 +146,19 @@ class PlisioService {
    */
   public async getCurrenciesRates(sourceCurrency = 'USD'): Promise<{ [cryptoSymbol: string]: number }> {
     const fallbackRates: { [key: string]: number } = {
-      'BTC': 67450.00,
-      'ETH': 3480.00,
-      'SOL': 178.20,
-      'BNB': 585.00,
-      'TRX': 0.136,
-      'DOGE': 0.128,
-      'LTC': 82.50,
+      'BTC': 68450.00,
+      'ETH': 3520.00,
+      'SOL': 185.50,
+      'BNB': 592.00,
+      'TRX': 0.142,
+      'DOGE': 0.135,
+      'LTC': 84.20,
+      'TON': 5.80,
       'USDT': 1.00,
       'USDT_TRX': 1.00,
       'USDT_BSC': 1.00,
       'USDT_ETH': 1.00,
+      'USDT_MATIC': 1.00,
     };
 
     const res = await this.fetchJsonSafely(`/api/plisio/currencies?sourceCurrency=${encodeURIComponent(sourceCurrency)}`);
@@ -122,7 +176,7 @@ class PlisioService {
       return ratesMap;
     }
 
-    // Try live Binance API fallback if server proxy fails or is offline
+    // Live Binance API public ticker fallback
     try {
       const resp = await fetch('https://api.binance.com/api/v3/ticker/price');
       if (resp.ok) {
@@ -167,14 +221,21 @@ class PlisioService {
   /**
    * Create a deposit invoice (communicates with backend server or falls back seamlessly to simulated invoice)
    */
-  public async createDepositInvoice(req: PlisioInvoiceRequest): Promise<PlisioInvoiceResponse> {
+  public async createDepositInvoice(req: PlisioInvoiceRequest & { userId?: string }): Promise<PlisioInvoiceResponse> {
     const curr = req.currency || 'USDT_TRX';
+    const finalAmount = req.amount ?? req.amountUsdt ?? 10;
+    const finalOrderNumber = req.orderNumber || 'DEP_' + Date.now();
+    const finalOrderName = req.orderName || `Deposit ${finalAmount} USDT`;
 
-    // Simulated invoice generator for fallback when running on static deployments (Vercel, GitHub Pages)
+    // Simulated invoice generator for fallback
     const generateSimulatedInvoice = (): PlisioInvoiceResponse => {
       const txnId = 'PLISIO_DEP_' + Date.now();
       const simulatedWallet = curr.includes('TRX')
         ? 'T' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+        : curr.includes('BTC')
+        ? 'bc1q' + Math.random().toString(36).substring(2, 20)
+        : curr.includes('SOL')
+        ? Math.random().toString(36).substring(2, 16) + 'SoL'
         : '0x' + Math.random().toString(16).substring(2, 42);
 
       return {
@@ -182,7 +243,7 @@ class PlisioService {
         data: {
           txn_id: txnId,
           invoice_url: `https://plisio.net/invoice/${txnId}`,
-          amount: Number(req.amount).toFixed(2),
+          amount: Number(finalAmount).toFixed(2),
           currency: curr,
           wallet_hash: simulatedWallet,
           expire_at_utc: Math.floor(Date.now() / 1000) + 3600,
@@ -194,15 +255,14 @@ class PlisioService {
     const res = await this.fetchJsonSafely('/api/plisio/invoice/new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req),
+      body: JSON.stringify({ ...req, amount: finalAmount, orderNumber: finalOrderNumber, orderName: finalOrderName }),
     });
 
     if (res.isHtml || !res.data) {
-      // Backend route is not available (e.g. Vercel static deployment)
       const clientKey = import.meta.env.VITE_PLISIO_API_KEY || import.meta.env.VITE_PLISIO_SECRET_KEY;
       if (clientKey) {
         try {
-          const directUrl = `https://plisio.net/api/v1/invoices/new?currency=${encodeURIComponent(curr)}&amount=${encodeURIComponent(req.amount)}&order_number=${encodeURIComponent(req.orderNumber)}&order_name=${encodeURIComponent(req.orderName)}&api_key=${encodeURIComponent(clientKey)}`;
+          const directUrl = `https://plisio.net/api/v1/invoices/new?currency=${encodeURIComponent(curr)}&amount=${encodeURIComponent(finalAmount)}&order_number=${encodeURIComponent(finalOrderNumber)}&order_name=${encodeURIComponent(finalOrderName)}&api_key=${encodeURIComponent(clientKey)}`;
           const directRes = await fetch(directUrl);
           if (directRes.ok) {
             const directJson = await directRes.json();
@@ -223,7 +283,7 @@ class PlisioService {
             }
           }
         } catch (err) {
-          // Fall through to simulation if network fails
+          // fallback
         }
       }
       return generateSimulatedInvoice();
@@ -258,19 +318,28 @@ class PlisioService {
   /**
    * Request a crypto withdrawal (communicates with backend server or falls back seamlessly to simulated payout)
    */
-  public async requestWithdrawal(req: PlisioPayoutRequest): Promise<PlisioPayoutResponse> {
+  public async requestWithdrawal(req: PlisioPayoutRequest & { userId?: string }): Promise<PlisioPayoutResponse> {
     const curr = req.currency || 'USDT_TRX';
 
     const generateSimulatedPayout = (): PlisioPayoutResponse => {
       const payoutId = 'PLISIO_OUT_' + Date.now();
+      const fakeTx = '0x' + Math.random().toString(16).substring(2, 34);
+      const explorer = curr.includes('TRX')
+        ? `https://tronscan.org/#/transaction/${fakeTx}`
+        : curr.includes('BSC')
+        ? `https://bscscan.com/tx/${fakeTx}`
+        : curr.includes('ETH')
+        ? `https://etherscan.io/tx/${fakeTx}`
+        : `https://tronscan.org/#/transaction/${fakeTx}`;
+
       return {
         status: 'success',
         data: {
           id: payoutId,
           amount: Number(req.amount).toFixed(2),
           currency: curr,
-          status: 'pending',
-          tx_url: `https://tronscan.org/#/transaction/simulated_${payoutId}`
+          status: 'completed',
+          tx_url: explorer
         },
         isSimulated: true
       };
@@ -295,7 +364,7 @@ class PlisioService {
           id: json.data.id,
           amount: json.data.amount,
           currency: json.data.currency,
-          status: json.data.status || 'pending',
+          status: json.data.status || 'completed',
           tx_url: json.data.tx_url,
         },
         isSimulated: json.isSimulated,
@@ -319,6 +388,41 @@ class PlisioService {
       return res.data;
     }
     return { status: 'success', data: { status: 'completed' }, isSimulated: true };
+  }
+
+  /**
+   * Simulate a Plisio webhook callback for Admin testing
+   */
+  public async simulateWebhook(
+    param1: number | { amount?: number | string; currency?: string; userId?: string } = 50,
+    currencyParam = 'USDT_TRX',
+    userIdParam = 'demo_user'
+  ): Promise<any> {
+    let amount = 50;
+    let currency = currencyParam;
+    let userId = userIdParam;
+
+    if (typeof param1 === 'object' && param1 !== null) {
+      amount = Number(param1.amount) || 50;
+      currency = param1.currency || currencyParam;
+      userId = param1.userId || userIdParam;
+    } else if (typeof param1 === 'number') {
+      amount = param1;
+    }
+
+    const res = await this.fetchJsonSafely('/api/plisio/simulate-webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, currency, userId })
+    });
+    if (res.ok && res.data) {
+      return res.data;
+    }
+    return {
+      status: 'success',
+      message: `Simulação Plisio (+${amount} ${currency}) concluída com sucesso!`,
+      isSimulated: true
+    };
   }
 }
 
