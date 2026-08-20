@@ -222,97 +222,95 @@ class PlisioService {
    * Create a deposit invoice (communicates with backend server or falls back seamlessly to simulated invoice)
    */
   public async createDepositInvoice(req: PlisioInvoiceRequest & { userId?: string }): Promise<PlisioInvoiceResponse> {
-    const curr = req.currency || 'USDT_TRX';
+    const curr = req.currency || 'USDT_TON';
     const finalAmount = req.amount ?? req.amountUsdt ?? 10;
     const finalOrderNumber = req.orderNumber || 'DEP_' + Date.now();
     const finalOrderName = req.orderName || `Deposit ${finalAmount} USDT`;
 
-    // Simulated invoice generator for fallback
-    const generateSimulatedInvoice = (): PlisioInvoiceResponse => {
-      const txnId = 'PLISIO_DEP_' + Date.now();
-      const simulatedWallet = curr.includes('TRX')
-        ? 'T' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-        : curr.includes('BTC')
-        ? 'bc1q' + Math.random().toString(36).substring(2, 20)
-        : curr.includes('SOL')
-        ? Math.random().toString(36).substring(2, 16) + 'SoL'
-        : '0x' + Math.random().toString(16).substring(2, 42);
-
-      return {
-        status: 'success',
-        data: {
-          txn_id: txnId,
-          invoice_url: `https://plisio.net/invoice/${txnId}`,
-          amount: Number(finalAmount).toFixed(2),
-          currency: curr,
-          wallet_hash: simulatedWallet,
-          expire_at_utc: Math.floor(Date.now() / 1000) + 3600,
-        },
-        isSimulated: true
-      };
-    };
-
+    // 1. Try Backend / Vercel Serverless Function first
     const res = await this.fetchJsonSafely('/api/plisio/invoice/new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...req, amount: finalAmount, orderNumber: finalOrderNumber, orderName: finalOrderName }),
     });
 
-    if (res.isHtml || !res.data) {
-      const clientKey = import.meta.env.VITE_PLISIO_API_KEY || import.meta.env.VITE_PLISIO_SECRET_KEY;
-      if (clientKey) {
-        try {
-          const directUrl = `https://plisio.net/api/v1/invoices/new?currency=${encodeURIComponent(curr)}&amount=${encodeURIComponent(finalAmount)}&order_number=${encodeURIComponent(finalOrderNumber)}&order_name=${encodeURIComponent(finalOrderName)}&api_key=${encodeURIComponent(clientKey)}`;
-          const directRes = await fetch(directUrl);
-          if (directRes.ok) {
-            const directJson = await directRes.json();
-            if (directJson.status === 'success' && directJson.data) {
-              return {
-                status: 'success',
-                data: {
-                  txn_id: directJson.data.txn_id,
-                  invoice_url: directJson.data.invoice_url,
-                  amount: directJson.data.amount,
-                  currency: directJson.data.currency,
-                  wallet_hash: directJson.data.wallet_hash,
-                  qr_code_base64: directJson.data.qr_code_base64,
-                  expire_at_utc: directJson.data.expire_at_utc,
-                },
-                isSimulated: false,
-              };
-            }
-          }
-        } catch (err) {
-          // fallback
-        }
+    if (res.ok && res.data) {
+      const json = res.data;
+      if (json.status === 'success' && json.data) {
+        return {
+          status: 'success',
+          data: {
+            txn_id: json.data.txn_id,
+            invoice_url: json.data.invoice_url,
+            amount: json.data.amount,
+            currency: json.data.currency,
+            wallet_hash: json.data.wallet_hash,
+            qr_code_base64: json.data.qr_code_base64,
+            expire_at_utc: json.data.expire_at_utc,
+          },
+          isSimulated: json.isSimulated,
+        };
+      } else if (json.message || json.data?.message) {
+        return {
+          status: 'error',
+          message: json.message || json.data?.message
+        };
       }
-      return generateSimulatedInvoice();
     }
 
-    const json = res.data;
+    // 2. Direct client fallback with VITE_PLISIO_SECRET_KEY / VITE_PLISIO_API_KEY
+    const clientKey = import.meta.env.VITE_PLISIO_API_KEY || import.meta.env.VITE_PLISIO_SECRET_KEY;
+    if (clientKey) {
+      try {
+        const queryParams = new URLSearchParams({
+          api_key: clientKey,
+          currency: curr,
+          amount: String(finalAmount),
+          order_number: String(finalOrderNumber),
+          order_name: String(finalOrderName),
+          source_currency: 'USD'
+        });
+        if (req.email || req.userEmail) {
+          queryParams.append('email', String(req.email || req.userEmail));
+        }
 
-    if (json.status === 'success' && json.data) {
-      return {
-        status: 'success',
-        data: {
-          txn_id: json.data.txn_id,
-          invoice_url: json.data.invoice_url,
-          amount: json.data.amount,
-          currency: json.data.currency,
-          wallet_hash: json.data.wallet_hash,
-          qr_code_base64: json.data.qr_code_base64,
-          expire_at_utc: json.data.expire_at_utc,
-        },
-        isSimulated: json.isSimulated,
-      };
-    } else if (json.message) {
-      return {
-        status: 'error',
-        message: json.message
-      };
+        const directUrl = `https://api.plisio.net/api/v1/invoices/new?${queryParams.toString()}`;
+        const directRes = await fetch(directUrl);
+        const directJson = await directRes.json();
+        
+        if (directJson.status === 'success' && directJson.data) {
+          return {
+            status: 'success',
+            data: {
+              txn_id: directJson.data.txn_id,
+              invoice_url: directJson.data.invoice_url,
+              amount: directJson.data.amount,
+              currency: directJson.data.currency,
+              wallet_hash: directJson.data.wallet_hash,
+              qr_code_base64: directJson.data.qr_code_base64,
+              expire_at_utc: directJson.data.expire_at_utc,
+            },
+            isSimulated: false,
+          };
+        } else if (directJson.data?.message) {
+          return {
+            status: 'error',
+            message: directJson.data.message
+          };
+        }
+      } catch (err: any) {
+        return {
+          status: 'error',
+          message: `Erro ao conectar à API da Plisio: ${err.message}`
+        };
+      }
     }
 
-    return generateSimulatedInvoice();
+    // If no key configured anywhere and backend failed
+    return {
+      status: 'error',
+      message: 'Chave da Plisio não configurada. Por favor, adicione PLISIO_SECRET_KEY nas Environment Variables da sua Vercel.'
+    };
   }
 
   /**
