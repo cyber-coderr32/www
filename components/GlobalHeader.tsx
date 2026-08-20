@@ -674,29 +674,8 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
           </AnimatePresence>
         </div>
 
-        {/* RIGHT SIDE: CRYPTO DEPOSIT, FULLSCREEN & ANUNCIAR BUTTONS */}
+        {/* RIGHT SIDE: FULLSCREEN & ANUNCIAR BUTTONS */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-
-          {/* CRYPTO DEPOSIT BUTTON */}
-          <button
-            onClick={() => {
-              soundService.playUISelect();
-              if (onOpenDeposit) {
-                onOpenDeposit();
-              } else {
-                onGoToProfile();
-              }
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#049444] via-emerald-500 to-teal-500 hover:from-[#037c39] hover:to-emerald-400 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/25 hover:scale-105 transition-all cursor-pointer border border-emerald-400/40 shrink-0 active:scale-95 group"
-            title="Depósito Rápido de Criptomoeda (Plisio Multi-Chain & PIX)"
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-300 group-hover:scale-110 transition-transform fill-amber-300 animate-pulse" />
-            <span className="hidden sm:inline font-black">Depósito Cripto</span>
-            <span className="sm:hidden font-black">Depositar</span>
-            <span className="hidden md:inline-block text-[9px] bg-amber-400 text-black px-1.5 py-0.5 rounded-full font-black ml-0.5 shadow-sm">
-              +5%
-            </span>
-          </button>
           
           {/* FULLSCREEN BUTTON */}
           <button
