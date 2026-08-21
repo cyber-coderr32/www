@@ -193,7 +193,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
               name: data.displayName || data.name || 'Jogador',
               email: data.email || '',
               phone: data.phone || '',
-              balance: data.balance !== undefined ? data.balance : 100,
+              balance: data.balance !== undefined ? Number(data.balance) : 0,
               role: data.role || 'USER',
               isBanned: data.isBanned || false,
               joinedAt: data.joinedAt || new Date().toISOString(),
@@ -304,6 +304,68 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
     setTimeout(() => setStatusMessage(null), 4000);
   };
 
+  const [payoutLoadingId, setPayoutLoadingId] = useState<string | null>(null);
+
+  // Execute Plisio Automated Crypto Payout
+  const handleExecutePlisioPayout = async (trans: TransactionRequest) => {
+    setPayoutLoadingId(trans.id);
+    soundService.playUISelect();
+    try {
+      // Extract target wallet address from accountDetails or walletAddress
+      let destinationWallet = trans.walletAddress || '';
+      if (!destinationWallet && trans.accountDetails) {
+        const match = trans.accountDetails.match(/(?:Destino|Carteira|Wallet|Address):\s*([a-zA-Z0-9_-]+)/i);
+        destinationWallet = match ? match[1] : trans.accountDetails.trim();
+      }
+
+      const currency = trans.cryptoCurrency || (trans.method.includes('TON') ? 'USDT_TON' : trans.method.includes('BSC') ? 'USDT_BSC' : trans.method.includes('ETH') ? 'USDT_ETH' : 'USDT_TRX');
+
+      const res = await plisioService.requestWithdrawal({
+        amount: trans.amount,
+        currency: currency,
+        toAddress: destinationWallet || 'TRX_DEFAULT_USER_WALLET',
+        userId: trans.userId
+      });
+
+      if (res.status === 'success' && res.data) {
+        const txUrl = res.data.tx_url || (currency.includes('TRX') ? `https://tronscan.org/#/transaction/${res.data.txn_id || res.data.id}` : '');
+        const updatedTrans = transactions.map(t => t.id === trans.id ? {
+          ...t,
+          status: 'APPROVED' as const,
+          txUrl: txUrl,
+          txHash: res.data?.txn_id || res.data?.id,
+          payoutId: res.data?.id,
+          isAutomaticPayout: true
+        } : t);
+
+        setTransactions(updatedTrans);
+        localStorage.setItem(LOCAL_TRANS_KEY, JSON.stringify(updatedTrans));
+        
+        try {
+          await updateDoc(doc(db, 'transactions', trans.id), {
+            status: 'APPROVED',
+            txUrl: txUrl,
+            txHash: res.data?.txn_id || res.data?.id,
+            isAutomaticPayout: true
+          });
+        } catch (e) {
+          // ignore
+        }
+
+        soundService.playWin();
+        showNotification(`⚡ Saque de ${trans.amount.toFixed(2)} USDT enviado com sucesso para a Blockchain via Plisio!`);
+      } else {
+        showNotification(`❌ Erro no saque automático Plisio: ${res.message || 'Falha na comunicação'}`);
+        soundService.playCrash();
+      }
+    } catch (e: any) {
+      showNotification(`Erro: ${e.message}`);
+      soundService.playCrash();
+    } finally {
+      setPayoutLoadingId(null);
+    }
+  };
+
   // Resolve Deposit / Withdrawal Request
   const handleResolveTransaction = async (id: string, status: 'APPROVED' | 'REJECTED') => {
     const trans = transactions.find(t => t.id === id);
@@ -312,33 +374,76 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
     if (status === 'APPROVED') {
       const userToUpdate = users.find(u => u.id === trans.userId);
       if (userToUpdate) {
-        const balanceChange = trans.type === 'DEPOSIT' ? trans.amount : -trans.amount;
-        const newBalance = Math.max(0, userToUpdate.balance + balanceChange);
+        // If deposit, credit user balance
+        if (trans.type === 'DEPOSIT') {
+          const newBalance = Math.max(0, userToUpdate.balance + trans.amount);
+          const updatedUsers = users.map(u => u.id === trans.userId ? { ...u, balance: newBalance } : u);
+          updateUsersState(updatedUsers);
+
+          try {
+            await updateDoc(doc(db, 'users', trans.userId), { balance: newBalance });
+          } catch (e) {
+            console.warn("Firestore update failed, saved locally.");
+          }
+        }
+      }
+    } else if (status === 'REJECTED' && trans.type === 'WITHDRAW') {
+      // Refund balance to user if withdrawal was rejected
+      let newBalance = trans.amount;
+      const userToUpdate = users.find(u => u.id === trans.userId);
+      if (userToUpdate) {
+        newBalance = Math.max(0, userToUpdate.balance + trans.amount);
         const updatedUsers = users.map(u => u.id === trans.userId ? { ...u, balance: newBalance } : u);
         updateUsersState(updatedUsers);
-
-        // Try syncing to Firestore
+      } else {
+        // Fallback to local users storage
         try {
-          await updateDoc(doc(db, 'users', trans.userId), { balance: newBalance });
-        } catch (e) {
-          console.warn("Firestore update failed, saved locally.");
+          const localUsers: UserAccount[] = JSON.parse(localStorage.getItem('skyhigh_users') || '[]');
+          const target = localUsers.find(u => u.id === trans.userId);
+          if (target) {
+            newBalance = Math.max(0, target.balance + trans.amount);
+            target.balance = newBalance;
+            localStorage.setItem('skyhigh_users', JSON.stringify(localUsers));
+          }
+        } catch (e) {}
+      }
+
+      // Check if current user in local storage is this user
+      try {
+        const localCurrent = JSON.parse(localStorage.getItem('skyhigh_user') || 'null');
+        if (localCurrent && localCurrent.id === trans.userId) {
+          localCurrent.balance = Math.max(0, (localCurrent.balance || 0) + trans.amount);
+          localStorage.setItem('skyhigh_user', JSON.stringify(localCurrent));
         }
+      } catch (e) {}
+
+      // Update Firestore user document
+      try {
+        await updateDoc(doc(db, 'users', trans.userId), { balance: newBalance });
+      } catch (e) {
+        console.warn("Firestore user balance update failed, saved locally.");
       }
     }
 
-    const updatedTrans = transactions.map(t => t.id === id ? { ...t, status } : t);
+    const updatedTrans = transactions.map(t => t.id === id ? { 
+      ...t, 
+      status, 
+      rejectionReason: status === 'REJECTED' ? 'Rejeitado e Estornado pelo Administrador' : t.rejectionReason 
+    } : t);
     setTransactions(updatedTrans);
     localStorage.setItem(LOCAL_TRANS_KEY, JSON.stringify(updatedTrans));
 
-    // Try syncing transaction status to Firestore
     try {
-      await updateDoc(doc(db, 'transactions', id), { status });
+      await updateDoc(doc(db, 'transactions', id), { 
+        status,
+        rejectionReason: status === 'REJECTED' ? 'Rejeitado e Estornado pelo Administrador' : ''
+      });
     } catch (e) {
       // ignore
     }
 
     soundService.playTick();
-    showNotification(`Transação #${id.substring(0, 6)} ${status === 'APPROVED' ? 'Aprovada' : 'Rejeitada'}!`);
+    showNotification(`Transação #${id.substring(0, 6)} ${status === 'APPROVED' ? 'Aprovada' : 'Rejeitada e Estornada (+ ' + trans.amount.toFixed(2) + ' USDT devolvidos)'}!`);
   };
 
   // Direct Credit / Debit User Balance Kz
@@ -1078,69 +1183,101 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                   transactions.map(t => (
                     <div
                       key={t.id}
-                      className={`p-5 rounded-3xl border transition-all flex flex-col md:flex-row items-center justify-between gap-4 ${
+                      className={`p-5 rounded-3xl border transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 ${
                         t.status === 'PENDING'
                           ? 'bg-[#0f1724] border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
                           : t.status === 'APPROVED'
-                          ? 'bg-[#090e17] border-emerald-500/20 opacity-80'
-                          : 'bg-[#090e17] border-red-500/20 opacity-60'
+                          ? 'bg-[#090e17] border-emerald-500/20 opacity-90'
+                          : 'bg-[#090e17] border-red-500/20 opacity-70'
                       }`}
                     >
-                      <div className="flex items-center gap-4 w-full md:w-auto">
+                      <div className="flex items-start sm:items-center gap-4 w-full lg:w-auto">
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 font-bold ${
                           t.type === 'DEPOSIT' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
                         }`}>
                           {t.type === 'DEPOSIT' ? '📥' : '📤'}
                         </div>
 
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-extrabold text-sm text-white">{t.userName}</span>
                             <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${
                               t.type === 'DEPOSIT' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
                             }`}>
-                              {t.type}
+                              {t.type === 'DEPOSIT' ? 'Depósito' : 'Saque / Levantamento'}
                             </span>
+                            {t.isAutomaticPayout && (
+                              <span className="text-[8px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded uppercase">
+                                ⚡ Plisio Automático
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-slate-400 font-medium">
-                            {t.method} • <span className="font-mono">{t.timestamp}</span>
+                            {t.method} • <span className="font-mono">{t.timestamp}</span> • <span className="font-mono text-slate-500">ID: {t.id}</span>
                           </p>
                           {t.accountDetails && (
-                            <p className="text-[9px] text-amber-300 font-mono mt-0.5">
-                              Dados: {t.accountDetails}
+                            <p className="text-[10px] text-amber-300 font-mono mt-0.5 break-all">
+                              {t.accountDetails}
                             </p>
+                          )}
+                          {t.txUrl && (
+                            <a
+                              href={t.txUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold inline-flex items-center gap-1 mt-0.5"
+                            >
+                              <span>🔗 Explorador Blockchain ({t.txHash ? t.txHash.substring(0, 12) + '...' : 'Ver Tx'})</span>
+                            </a>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto">
-                        <div className="text-right">
-                          <span className="text-[9px] text-slate-400 uppercase font-black block">Valor Kz</span>
-                          <span className="text-xl font-mono font-black text-white">
-                            {t.amount.toLocaleString('pt-AO')} Kz
+                      <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-t-0 border-white/5">
+                        <div className="text-left lg:text-right">
+                          <span className="text-[9px] text-slate-400 uppercase font-black block">Montante</span>
+                          <span className={`text-xl font-mono font-black ${t.type === 'DEPOSIT' ? 'text-emerald-400' : 'text-amber-300'}`}>
+                            {t.amount.toFixed(2)} USDT
                           </span>
                         </div>
 
                         {t.status === 'PENDING' ? (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleResolveTransaction(t.id, 'REJECTED')}
-                              className="px-4 py-2 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase transition-all cursor-pointer"
-                            >
-                              Rejeitar
-                            </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Option 1: Automatic Plisio Crypto Payout */}
+                            {t.type === 'WITHDRAW' && (
+                              <button
+                                onClick={() => handleExecutePlisioPayout(t)}
+                                disabled={payoutLoadingId === t.id}
+                                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+                                title="Executar pagamento instantâneo via API da Plisio"
+                              >
+                                <span>{payoutLoadingId === t.id ? 'A Enviar...' : '⚡ Pagar via Plisio'}</span>
+                              </button>
+                            )}
+
+                            {/* Option 2: Manual Approval */}
                             <button
                               onClick={() => handleResolveTransaction(t.id, 'APPROVED')}
-                              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                              title="Aprovar manualmente sem chamar API externa"
                             >
-                              Aprovar
+                              ✓ Aprovar Manual
+                            </button>
+
+                            {/* Option 3: Reject & Refund */}
+                            <button
+                              onClick={() => handleResolveTransaction(t.id, 'REJECTED')}
+                              className="px-3.5 py-2 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase transition-all cursor-pointer"
+                              title="Rejeitar pedido e devolver saldo ao usuário"
+                            >
+                              ✕ Rejeitar & Estornar
                             </button>
                           </div>
                         ) : (
-                          <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase border ${
+                          <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border ${
                             t.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'
                           }`}>
-                            {t.status === 'APPROVED' ? '✓ APROVADO' : '✕ REJEITADO'}
+                            {t.status === 'APPROVED' ? '✓ APROVADO COM SUCESSO' : '✕ REJEITADO / ESTORNADO'}
                           </span>
                         )}
                       </div>
@@ -1839,7 +1976,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase block mb-1.5">
                     Ambiente Plisio
@@ -1896,6 +2033,23 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                     />
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-400">% BÓNUS</span>
                   </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-yellow-400 uppercase block mb-1.5">
+                    Modo de Saque Cripto
+                  </label>
+                  <select
+                    value={settings.plisio?.withdrawMode || 'automatic'}
+                    onChange={(e) => saveSettings({
+                      ...settings,
+                      plisio: { ...(settings.plisio || { secretKey: '', whiteLabel: true, environment: 'sandbox', defaultCurrency: 'USDT_TRX', acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'BTC', 'ETH', 'SOL', 'TRX'], depositBonusPercent: 5, enabled: true }), withdrawMode: e.target.value as any }
+                    })}
+                    className="w-full bg-black/60 border border-white/10 rounded-2xl px-4 py-3 text-white font-bold text-xs outline-none focus:border-yellow-400 cursor-pointer"
+                  >
+                    <option value="automatic">⚡ Automático Imediato (API Plisio Payouts)</option>
+                    <option value="manual">🛡️ Fila de Aprovação Manual do Admin</option>
+                  </select>
                 </div>
               </div>
 

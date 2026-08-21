@@ -80,7 +80,7 @@ export const userService = {
       const newUser = {
         ...profile,
         uid,
-        balance: profile.balance !== undefined ? profile.balance : 100.00,
+        balance: profile.balance !== undefined ? profile.balance : 0.00,
         totalWins: profile.totalWins || 0,
         totalBets: profile.totalBets || 0,
         updatedAt: new Date().toISOString()
@@ -110,7 +110,7 @@ export const userService = {
       await setDoc(doc(db, 'users', uid), {
         ...profile,
         uid,
-        balance: profile.balance !== undefined ? profile.balance : 100.00,
+        balance: profile.balance !== undefined ? profile.balance : 0.00,
         totalWins: profile.totalWins || 0,
         totalBets: profile.totalBets || 0,
         updatedAt: serverTimestamp()
@@ -122,7 +122,7 @@ export const userService = {
       const newUser = {
         ...profile,
         uid,
-        balance: profile.balance !== undefined ? profile.balance : 100.00,
+        balance: profile.balance !== undefined ? profile.balance : 0.00,
         totalWins: profile.totalWins || 0,
         totalBets: profile.totalBets || 0,
         updatedAt: new Date().toISOString()

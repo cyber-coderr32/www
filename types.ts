@@ -6,7 +6,7 @@ export enum GameStatus {
   CRASHED = 'CRASHED'
 }
 
-export type ViewState = 'LOGIN' | 'REGISTER' | 'HOME' | 'AVIATOR' | 'ROULETTE' | 'SLOTS' | 'DICE' | 'LOTTERY' | 'MINES' | 'PLINKO' | 'PENALTY' | 'BLACKJACK' | 'COINFLIP' | 'POKER' | 'KENO' | 'BACCARAT' | 'SCRATCH' | 'WHEEL' | 'CRASH' | 'POKE_CHOMP' | 'LIMBO' | 'TOWER' | 'HILO' | 'STAIRS' | 'PROFILE' | 'ADMIN' | 'MAINTENANCE' | 'PROMOTIONS' | 'HISTORY' | 'SOCIAL' | 'P2P' | 'PDF_MARKET' | 'PRODUCT_MANAGER' | 'TERMS' | 'PRIVACY' | 'REFUND' | 'SUCCESS' | 'FAILURE' | 'VIEW_PROFILE' | 'CREATE_PRODUCT' | 'API_PORTAL' | 'EMBED_GAME';
+export type ViewState = 'LOGIN' | 'REGISTER' | 'HOME' | 'AVIATOR' | 'ROULETTE' | 'SLOTS' | 'DICE' | 'LOTTERY' | 'MINES' | 'PLINKO' | 'PENALTY' | 'BLACKJACK' | 'COINFLIP' | 'POKER' | 'KENO' | 'BACCARAT' | 'SCRATCH' | 'WHEEL' | 'CRASH' | 'POKE_CHOMP' | 'LIMBO' | 'TOWER' | 'HILO' | 'STAIRS' | 'PROFILE' | 'ADMIN' | 'MAINTENANCE' | 'PROMOTIONS' | 'HISTORY' | 'SOCIAL' | 'P2P' | 'PDF_MARKET' | 'PRODUCT_MANAGER' | 'TERMS' | 'PRIVACY' | 'REFUND' | 'SUCCESS' | 'FAILURE' | 'VIEW_PROFILE' | 'CREATE_PRODUCT' | 'API_PORTAL' | 'EMBED_GAME' | 'TRANSACTION_STATUS';
 
 export interface ApiKeyRecord {
   id: string;
@@ -153,6 +153,14 @@ export interface TransactionRequest {
   timestamp: string;
   proofUrl?: string;
   accountDetails?: string;
+  cryptoCurrency?: string;
+  walletAddress?: string;
+  txHash?: string;
+  txUrl?: string;
+  payoutId?: string;
+  isAutomaticPayout?: boolean;
+  payoutError?: string;
+  rejectionReason?: string;
 }
 
 export interface CaktoSettings {
@@ -179,6 +187,26 @@ export interface PlisioSettings {
   defaultCurrency?: string; // e.g. 'USDT_TRX'
   acceptedCurrencies?: string[];
   depositBonusPercent?: number;
+  withdrawMode?: 'automatic' | 'manual'; // 'automatic' direct API payout or 'manual' admin approval queue
+  autoWithdrawMaxAmount?: number; // Maximum limit for instant automatic crypto payout without manual review
+}
+
+export interface PdfBook {
+  id: string;
+  title: string;
+  author: string;
+  description: string;
+  price: number;
+  sellerId: string;
+  sellerName: string;
+  coverColor: string;
+  coverImage?: string; // High-definition cover photo URL or base64
+  createdAt: string;
+  downloads: number;
+  category?: string;
+  pagesCount?: number;
+  pdfFileUrl?: string;
+  pdfFileName?: string;
 }
 
 export interface PaymentMethod {

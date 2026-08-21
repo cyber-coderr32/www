@@ -4,7 +4,7 @@ import { ViewState, UserAccount, GlobalSettings } from './types';
 import { soundService } from './services/soundService';
 import { authService } from './services/authService';
 import { userService } from './services/userService';
-import { doc, getDocFromServer } from 'firebase/firestore';
+import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
 import { db } from './services/firebase';
 import LoginView from './views/LoginView';
 import RegisterView from './views/RegisterView';
@@ -31,7 +31,9 @@ import {
   ArrowUpDown,
   BookOpen,
   LogOut,
-  Store
+  Store,
+  Receipt,
+  Clock
 } from 'lucide-react';
 
 // Lazy Loading
@@ -70,6 +72,7 @@ const SuccessView = lazy(() => import('@/views/SuccessView'));
 const FailureView = lazy(() => import('@/views/FailureView'));
 const ApiPortalView = lazy(() => import('./views/ApiPortalView'));
 const EmbedGameView = lazy(() => import('./views/EmbedGameView'));
+const TransactionStatusView = lazy(() => import('./views/TransactionStatusView'));
 
 const MaintenanceView: React.FC = () => (
   <div className="h-full w-full flex flex-col items-center justify-center bg-[#0b0e11] p-10 text-center">
@@ -139,6 +142,73 @@ const App: React.FC = () => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 786);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  // Detect when virtual keyboard is active or an input/textarea is focused to prevent menu jumping up
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        setIsKeyboardOpen(true);
+      }
+    };
+
+    const handleFocusOut = () => {
+      setTimeout(() => {
+        const active = document.activeElement as HTMLElement;
+        if (
+          !active ||
+          (active.tagName !== 'INPUT' &&
+            active.tagName !== 'TEXTAREA' &&
+            active.tagName !== 'SELECT' &&
+            !active.isContentEditable)
+        ) {
+          setIsKeyboardOpen(false);
+        }
+      }, 100);
+    };
+
+    const handleViewportResize = () => {
+      if (window.visualViewport) {
+        // When keyboard opens, visualViewport shrinks significantly
+        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.82;
+        if (isKeyboard) {
+          setIsKeyboardOpen(true);
+        } else {
+          const active = document.activeElement as HTMLElement;
+          if (
+            !active ||
+            (active.tagName !== 'INPUT' &&
+              active.tagName !== 'TEXTAREA' &&
+              active.tagName !== 'SELECT' &&
+              !active.isContentEditable)
+          ) {
+            setIsKeyboardOpen(false);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportResize);
+    }
+
+    return () => {
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewportResize);
+      }
+    };
+  }, []);
   const [settings, setSettings] = useState<GlobalSettings>({
     siteName: 'CryptonBet Angola',
     maintenanceMode: false,
@@ -229,7 +299,7 @@ const App: React.FC = () => {
             name: profile.displayName || 'Jogador',
             email: fbUser.email || '',
             phone: profile.phone || '',
-            balance: profile.balance !== undefined ? profile.balance : 100.00,
+            balance: profile.balance !== undefined ? Number(profile.balance) : (isAdminUser ? 500000.00 : 0.00),
             role: isAdminUser ? 'ADMIN' : 'USER',
             isBanned: profile.isBanned || false,
             joinedAt: profile.joinedAt || new Date().toISOString(),
@@ -245,14 +315,14 @@ const App: React.FC = () => {
              setView(s.maintenanceMode && !isAdminUser ? 'MAINTENANCE' : 'HOME');
           }
         } else {
-          // Robust local fallback so that users can always play
+          // Robust fallback with zero balance until real deposit is made
           const isAdminUser = fbUser.email === 'alfaajmc@atend.com' || fbUser.email === 'alfaajmc@gmail.com' || fbUser.email === 'admin@cryptonbet.ao';
           const fallbackAccount: UserAccount = {
             id: fbUser.uid,
             name: fbUser.displayName || 'Jogador Conectado',
             email: fbUser.email || '',
             phone: '',
-            balance: 100.00,
+            balance: isAdminUser ? 500000.00 : 0.00,
             role: isAdminUser ? 'ADMIN' : 'USER',
             isBanned: false,
             joinedAt: new Date().toISOString(),
@@ -261,7 +331,7 @@ const App: React.FC = () => {
             whatsapp: ''
           };
           setUser(fallbackAccount);
-          setRealBalance(100.00);
+          setRealBalance(fallbackAccount.balance);
           if (view === 'LOGIN' || view === 'REGISTER') {
              setView('HOME');
           }
@@ -277,99 +347,126 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // Real-time synchronization of user balance from Firestore (for Plisio, PIX, and manual deposit approvals)
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId || userId.startsWith('local_') || userId === 'guest_user') return;
+
+    const unsubUser = onSnapshot(doc(db, 'users', userId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && data.balance !== undefined) {
+          const liveBalance = Number(data.balance);
+          setRealBalance(prev => (prev !== liveBalance ? liveBalance : prev));
+          setUser(prev => {
+            if (!prev || prev.balance === liveBalance) return prev;
+            return { ...prev, balance: liveBalance };
+          });
+        }
+      }
+    }, (err) => {
+      console.warn("User live listener error:", err.message);
+    });
+
+    return () => unsubUser();
+  }, [user?.id]);
+
   useEffect(() => {
     const syncSettings = () => {
       const saved = localStorage.getItem('skyhigh_settings');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        let mutated = false;
+        try {
+          const parsed = JSON.parse(saved);
+          let mutated = false;
 
-        // Ensure Plisio Crypto is always registered and available
-        if (!parsed.paymentMethods?.some((m: any) => m.id === 'plisio_crypto')) {
-          parsed.paymentMethods = [
-            { 
-              id: 'plisio_crypto', 
-              name: '⚡ Cripto Automático (Plisio)', 
-              type: 'CRYPTO', 
-              account: 'Plisio Crypto Gateway', 
-              icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', 
-              isActive: true, 
-              minDeposit: 5, 
-              maxWithdraw: 50000, 
-              cryptoType: 'USDT', 
-              cryptoNetwork: 'Multi-Chain (TRC20, BEP20, BTC, ETH, SOL, TRX, LTC, DOGE)', 
-              details: 'Fatura instantânea com QR Code e crédito automático na Blockchain' 
-            },
-            ...(parsed.paymentMethods || [])
-          ];
-          mutated = true;
-        }
+          // Ensure Plisio Crypto is always registered and available
+          if (!parsed.paymentMethods?.some((m: any) => m.id === 'plisio_crypto')) {
+            parsed.paymentMethods = [
+              { 
+                id: 'plisio_crypto', 
+                name: '⚡ Cripto Automático (Plisio)', 
+                type: 'CRYPTO', 
+                account: 'Plisio Crypto Gateway', 
+                icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', 
+                isActive: true, 
+                minDeposit: 5, 
+                maxWithdraw: 50000, 
+                cryptoType: 'USDT', 
+                cryptoNetwork: 'Multi-Chain (TRC20, BEP20, BTC, ETH, SOL, TRX, LTC, DOGE)', 
+                details: 'Fatura instantânea com QR Code e crédito automático na Blockchain' 
+              },
+              ...(parsed.paymentMethods || [])
+            ];
+            mutated = true;
+          }
 
-        if (!parsed.paymentMethods?.some((m: any) => m.type === 'PIX' || m.id === 'pix_cakto')) {
-          parsed.paymentMethods = [
-            ...(parsed.paymentMethods || []),
-            { id: 'pix_cakto', name: 'PIX Automático (Brasil)', type: 'PIX', account: 'pix@cryptonbet.com', icon: 'https://images.unsplash.com/photo-1613243555988-441166d4d6fd?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 5, maxWithdraw: 50000, details: 'Depósito instantâneo via PIX com aprovação em tempo real' }
-          ];
-          mutated = true;
-        } else if (parsed.paymentMethods) {
-          parsed.paymentMethods = parsed.paymentMethods.map((m: any) => {
-            if (m.type === 'PIX' || m.id === 'pix_cakto' || (m.name && m.name.toLowerCase().includes('cakto'))) {
-              if (m.name !== 'PIX Automático (Brasil)') mutated = true;
-              return {
-                ...m,
-                name: 'PIX Automático (Brasil)',
-                details: 'Depósito instantâneo via PIX com aprovação em tempo real'
-              };
-            }
-            return m;
-          });
+          if (!parsed.paymentMethods?.some((m: any) => m.type === 'PIX' || m.id === 'pix_cakto')) {
+            parsed.paymentMethods = [
+              ...(parsed.paymentMethods || []),
+              { id: 'pix_cakto', name: 'PIX Automático (Brasil)', type: 'PIX', account: 'pix@cryptonbet.com', icon: 'https://images.unsplash.com/photo-1613243555988-441166d4d6fd?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 5, maxWithdraw: 50000, details: 'Depósito instantâneo via PIX com aprovação em tempo real' }
+            ];
+            mutated = true;
+          } else if (parsed.paymentMethods) {
+            parsed.paymentMethods = parsed.paymentMethods.map((m: any) => {
+              if (m.type === 'PIX' || m.id === 'pix_cakto' || (m.name && m.name.toLowerCase().includes('cakto'))) {
+                if (m.name !== 'PIX Automático (Brasil)') mutated = true;
+                return {
+                  ...m,
+                  name: 'PIX Automático (Brasil)',
+                  details: 'Depósito instantâneo via PIX com aprovação em tempo real'
+                };
+              }
+              return m;
+            });
+          }
+          if (!parsed.cakto) {
+            parsed.cakto = {
+              enabled: true,
+              apiToken: '',
+              clientSecret: '',
+              webhookSecret: '',
+              pixKey: 'pix@cryptonbet.com',
+              receiverName: 'CryptonBet Brasil',
+              exchangeRate: 5.85,
+              environment: 'sandbox'
+            };
+            mutated = true;
+          }
+          if (!parsed.plisio) {
+            parsed.plisio = {
+              enabled: true,
+              secretKey: '',
+              whiteLabel: true,
+              environment: 'sandbox',
+              defaultCurrency: 'USDT_TRX',
+              acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'USDT_ETH', 'BTC', 'ETH', 'SOL', 'TRX', 'LTC', 'DOGE', 'BNB', 'TON'],
+              depositBonusPercent: 5
+            };
+            mutated = true;
+          }
+          if (mutated) {
+            localStorage.setItem('skyhigh_settings', JSON.stringify(parsed));
+          }
+          setSettings(prev => JSON.stringify(prev) !== JSON.stringify(parsed) ? parsed : prev);
+          if (parsed.maintenanceMode && userRole !== 'ADMIN' && !['LOGIN', 'REGISTER', 'MAINTENANCE'].includes(view)) {
+            setView('MAINTENANCE');
+          }
+        } catch (e) {
+          console.error("Error in syncSettings:", e);
         }
-        if (!parsed.cakto) {
-          parsed.cakto = {
-            enabled: true,
-            apiToken: '',
-            clientSecret: '',
-            webhookSecret: '',
-            pixKey: 'pix@cryptonbet.com',
-            receiverName: 'CryptonBet Brasil',
-            exchangeRate: 5.85,
-            environment: 'sandbox'
-          };
-          mutated = true;
-        }
-        if (!parsed.plisio) {
-          parsed.plisio = {
-            enabled: true,
-            secretKey: '',
-            whiteLabel: true,
-            environment: 'sandbox',
-            defaultCurrency: 'USDT_TRX',
-            acceptedCurrencies: ['USDT_TRX', 'USDT_BSC', 'USDT_ETH', 'BTC', 'ETH', 'SOL', 'TRX', 'LTC', 'DOGE', 'BNB', 'TON'],
-            depositBonusPercent: 5
-          };
-          mutated = true;
-        }
-        if (mutated) {
-          localStorage.setItem('skyhigh_settings', JSON.stringify(parsed));
-        }
-        setSettings(parsed);
-        if (parsed.maintenanceMode && user?.role !== 'ADMIN' && !['LOGIN', 'REGISTER'].includes(view)) {
-          setView('MAINTENANCE');
-        }
-      } else {
-        localStorage.setItem('skyhigh_settings', JSON.stringify(settings));
       }
     };
 
+    const userRole = user?.role;
     syncSettings();
     const handleResize = () => setIsDesktop(window.innerWidth >= 786);
     window.addEventListener('resize', handleResize);
-    const interval = setInterval(syncSettings, 3000);
+    const interval = setInterval(syncSettings, 5000);
     return () => {
       clearInterval(interval);
       window.removeEventListener('resize', handleResize);
     };
-  }, [user, view]);
+  }, [user?.role, view]);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -394,14 +491,6 @@ const App: React.FC = () => {
       window.removeEventListener('keydown', handleKeyPress);
     };
   }, []);
-
-  useEffect(() => {
-    if (user && !isDemo) {
-      // Sync local balance changes to Firebase
-      // We debounce or throttle this in a real app, but for now we'll do simple sync
-      userService.updateBalance(user.id, realBalance);
-    }
-  }, [realBalance, user, isDemo]);
 
   const handleEmailLogin = async (email: string, pass: string) => {
     try {
@@ -572,7 +661,11 @@ const App: React.FC = () => {
     if (isDemo) {
       setDemoBalance(prev => Math.max(0, prev + amount));
     } else {
-      setRealBalance(prev => Math.max(0, prev + amount));
+      const nextBal = Math.max(0, realBalance + amount);
+      setRealBalance(nextBal);
+      if (user?.id && !user.id.startsWith('local_') && user.id !== 'guest_user') {
+        userService.updateBalance(user.id, nextBal).catch(() => {});
+      }
     }
   };
 
@@ -694,6 +787,7 @@ const App: React.FC = () => {
       case 'POKER': return <PokerView balance={activeBalance} onUpdateBalance={updateBalance} onBack={() => setView('HOME')} />;
 
       case 'ADMIN': return <AdminView onBack={() => setView('HOME')} />;
+      case 'TRANSACTION_STATUS': return <TransactionStatusView user={user!} onBack={() => setView('PROFILE')} onGoToDeposit={handleOpenDeposit} onGoToWithdraw={() => { setViewingUser(null); setView('PROFILE'); }} onUpdateBalance={updateBalance} />;
       case 'PROMOTIONS': return <PromotionsView onBack={() => setView('HOME')} onAction={(g) => handleSelectGame(g)} />;
       case 'HISTORY': return <HistoryView onBack={() => setView('HOME')} />;
       case 'API_PORTAL': return <ApiPortalView onBack={() => setView('HOME')} />;
@@ -786,6 +880,24 @@ const App: React.FC = () => {
                 </span>
                 <span className={`font-black uppercase text-[11px] tracking-widest transition-opacity duration-300 whitespace-nowrap ${isMenuOpen ? 'opacity-100' : (isDesktop ? 'opacity-0 xl:opacity-100' : 'opacity-0')}`}>
                   Meus Produtos (Vendas)
+                </span>
+              </motion.button>
+
+              <motion.button 
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                onClick={() => { 
+                  soundService.playUISelect();
+                  setIsMenuOpen(false);
+                  setView('TRANSACTION_STATUS');
+                }} 
+                className="w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all relative overflow-hidden group cursor-pointer z-[10] bg-gradient-to-r from-amber-500/20 to-yellow-600/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 shadow-md mb-2"
+              >
+                <span className="shrink-0 transition-transform group-hover:scale-110 text-amber-400">
+                  <Receipt className="w-5 h-5 md:w-6 md:h-6" />
+                </span>
+                <span className={`font-black uppercase text-[11px] tracking-widest transition-opacity duration-300 whitespace-nowrap ${isMenuOpen ? 'opacity-100' : (isDesktop ? 'opacity-0 xl:opacity-100' : 'opacity-0')}`}>
+                  Status de Transações
                 </span>
               </motion.button>
 
@@ -889,7 +1001,7 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {!isAuthView && !isDesktop && (
+      {!isAuthView && !isDesktop && !isKeyboardOpen && (
         <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#131d27]/95 backdrop-blur-xl border-t border-white/5 z-[200] flex items-center justify-around px-4 shadow-[0_-10px_40px_rgba(0,0,0,0.8)]">
           {[
             { id: 'HOME', icon: <Globe className="w-5 h-5" />, label: 'Home' },

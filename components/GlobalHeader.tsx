@@ -97,6 +97,7 @@ const ALL_GAMES: Array<{
   { id: 'P2P', name: 'Mercado P2P Cripto', description: 'Compra e venda de USDT e moedas crypto', category: 'Mercado', icon: '🔄', popular: true },
   { id: 'PDF_MARKET', name: 'Mercado de E-books', description: 'Compre e venda produtos digitais e estratégias', category: 'Digital', icon: '📚', popular: true },
   { id: 'PRODUCT_MANAGER', name: 'Gerenciador de Produtos & Vendas', description: 'Veja quanto foi vendido, edite, pause ou elimine seus E-books e Ofertas', category: 'Vendas', icon: '📊', popular: true },
+  { id: 'TRANSACTION_STATUS', name: 'Status de Transações (Depósitos & Saques)', description: 'Acompanhe depósitos e saques em tempo real com status de confirmação e sucesso', category: 'Financeiro', icon: '⚡', popular: true },
   { id: 'SOCIAL', name: 'Comunidade & Feed', description: 'Acompanhe apostas, posts e anúncios de membros', category: 'Social', icon: '🌐' },
   { id: 'PROMOTIONS', name: 'Bónus & Promoções', description: 'Ver ofertas, rodadas grátis e bónus ativos', category: 'Ofertas', icon: '🎁' },
   { id: 'HISTORY', name: 'Histórico de Operações', description: 'Extrato detalhado de ganhos e depósitos', category: 'Conta', icon: '📜' },

@@ -102,7 +102,7 @@ export const authService = {
         email,
         displayName: isAdminEmail ? 'Alfaajmc (Admin)' : email.split('@')[0],
         password: pass,
-        balance: isAdminEmail ? 500000.00 : 100.00,
+        balance: isAdminEmail ? 500000.00 : 0.00,
         role: isAdminEmail ? 'ADMIN' : 'USER',
         totalWins: isAdminEmail ? 25 : 0,
         totalBets: isAdminEmail ? 30 : 0,

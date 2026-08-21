@@ -1267,18 +1267,7 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
     }, 100); // 100ms * 50 steps = 5000ms (5 seconds duration)
 
     return () => clearInterval(interval);
-  }, [selectedStory, isStoryPaused, showStoryComments, activeStoryIndex, activeStoryGroup]);
-
-  useEffect(() => {
-    if (!selectedStory) {
-      setStoryProgress(0);
-      setShowStoryComments(false);
-      setIsStoryPaused(false);
-      setStoryCommentText('');
-      setActiveStoryGroup([]);
-      setActiveStoryIndex(0);
-    }
-  }, [selectedStory]);
+  }, [selectedStory?.id, isStoryPaused, showStoryComments, activeStoryIndex, activeStoryGroup.length]);
 
   const defaultStories: any[] = [];
 
@@ -1500,7 +1489,13 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
           if (data.postId) boughtIds.push(data.postId);
         });
         if (boughtIds.length > 0) {
-          setPurchasedBookIds(prev => Array.from(new Set([...prev, ...boughtIds])));
+          setPurchasedBookIds(prev => {
+            const nextList = Array.from(new Set([...prev, ...boughtIds]));
+            if (nextList.length === prev.length && nextList.every((id, idx) => id === prev[idx])) {
+              return prev;
+            }
+            return nextList;
+          });
         }
       }, (err) => console.warn("Firestore pdf_purchases subscription warning:", err));
 

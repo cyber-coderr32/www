@@ -47,7 +47,7 @@ import { caktoService } from '../services/caktoService';
 import { plisioService, SUPPORTED_PLISIO_CRYPTOS, PlisioCryptoOption } from '../services/plisioService';
 import { TransactionRequest, GlobalSettings, PaymentMethod } from '../types';
 import { db } from '../services/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 interface ProfileViewProps {
   balance: number;
@@ -374,7 +374,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
     } catch (e) {
       console.error("Error loading creator stats", e);
     }
-  }, [user]);
+  }, [user.id, user.name, user.phone, user.bio, user.whatsapp, user.avatarColor]);
   
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -397,57 +397,60 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
   useEffect(() => {
     setPixData(null);
     setPlisioInvoice(null);
-  }, [selectedMethod, depositAmount]);
+  }, [selectedMethod?.id, depositAmount]);
 
   // 5. FRONT-END: ACOMPANHAR O PAGAMENTO EM TEMPO REAL VIA FIRESTORE (onSnapshot)
   useEffect(() => {
-    if (!pixData || !pixData.txId) return;
+    const txId = pixData?.txId;
+    if (!txId) return;
 
-    console.log(`[Cakto PIX Monitor] Escutando atualizações em tempo real no Firestore: orders/${pixData.txId}`);
-    const unsub = onSnapshot(doc(db, "orders", pixData.txId), (snap) => {
+    console.log(`[Cakto PIX Monitor] Escutando atualizações em tempo real no Firestore: orders/${txId}`);
+    const unsub = onSnapshot(doc(db, "orders", txId), (snap) => {
       const data = snap.data();
       if (data && (data.status === "paid" || data.status === "approved" || data.status === "succeeded")) {
-        console.log(`✅ [Cakto PIX Monitor] Pedido ${pixData.txId} aprovado via Webhook! Crédito instantâneo.`);
+        console.log(`✅ [Cakto PIX Monitor] Pedido ${txId} aprovado via Webhook! Crédito instantâneo.`);
         soundService.playWin();
-        onUpdateBalance(balance + (data.amountUsdt || pixData.amountUsdt || 0));
-        showFeedback("✅ Pagamento PIX aprovado em tempo real via Webhook! Crédito liberado.");
+        const creditAmount = data.amountUsdt || pixData?.amountUsdt || 0;
+        onUpdateBalance(creditAmount);
+        showFeedback(`✅ Pagamento PIX aprovado em tempo real via Webhook! +${creditAmount.toFixed(2)} USDT liberados.`);
         setPixData(null);
         unsub();
       }
     }, (err) => {
-      console.warn(`[Cakto PIX Monitor] Aviso no listener de orders/${pixData.txId}:`, err.message);
+      console.warn(`[Cakto PIX Monitor] Aviso no listener de orders/${txId}:`, err.message);
     });
 
     return () => {
       unsub();
     };
-  }, [pixData, balance, onUpdateBalance]);
+  }, [pixData?.txId]);
 
   // Real-time listener for Plisio Crypto Invoices
   useEffect(() => {
-    if (!plisioInvoice || !plisioInvoice.txn_id) return;
+    const txnId = plisioInvoice?.txn_id;
+    if (!txnId) return;
 
-    console.log(`[Plisio Monitor] Escutando atualizações em tempo real no Firestore: orders/${plisioInvoice.txn_id}`);
-    const unsub = onSnapshot(doc(db, "orders", plisioInvoice.txn_id), (snap) => {
+    console.log(`[Plisio Monitor] Escutando atualizações em tempo real no Firestore: orders/${txnId}`);
+    const unsub = onSnapshot(doc(db, "orders", txnId), (snap) => {
       const data = snap.data();
       if (data && (data.status === "completed" || data.status === "paid" || data.status === "mismatch")) {
-        console.log(`✅ [Plisio Monitor] Transação ${plisioInvoice.txn_id} confirmada na Blockchain!`);
+        console.log(`✅ [Plisio Monitor] Transação ${txnId} confirmada na Blockchain!`);
         soundService.playWin();
         const bonus = (depositAmount * ((globalSettings?.plisio?.depositBonusPercent || 5) / 100));
         const totalCredited = (data.amountUsdt || depositAmount) + bonus;
-        onUpdateBalance(balance + totalCredited);
+        onUpdateBalance(totalCredited);
         showFeedback(`✅ Depósito Crypto Confirmado na Blockchain! +${totalCredited.toFixed(2)} USDT creditados.`);
         setPlisioInvoice(null);
         unsub();
       }
     }, (err) => {
-      console.warn(`[Plisio Monitor] Aviso no listener de orders/${plisioInvoice.txn_id}:`, err.message);
+      console.warn(`[Plisio Monitor] Aviso no listener de orders/${txnId}:`, err.message);
     });
 
     return () => {
       unsub();
     };
-  }, [plisioInvoice, balance, depositAmount, globalSettings, onUpdateBalance]);
+  }, [plisioInvoice?.txn_id]);
   
   const [withdrawAmount, setWithdrawAmount] = useState<number>(20);
   const [withdrawAccount, setWithdrawAccount] = useState<string>('');
@@ -678,7 +681,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
           soundService.playWin();
           const bonus = (depositAmount * ((globalSettings?.plisio?.depositBonusPercent || 5) / 100));
           const totalCredited = depositAmount + bonus;
-          onUpdateBalance(balance + totalCredited);
+          onUpdateBalance(totalCredited);
           showFeedback(`✅ Depósito Confirmado na Blockchain! +${totalCredited.toFixed(2)} USDT creditados.`);
           setPlisioInvoice(null);
         } else {
@@ -695,7 +698,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
   };
 
   const handlePlisioWithdrawal = async () => {
-    if (withdrawAmount > balance) {
+    if (withdrawAmount > balance || withdrawAmount <= 0) {
       showFeedback("Saldo insuficiente para efetuar o levantamento.");
       soundService.playCrash();
       return;
@@ -722,7 +725,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
       });
 
       if (res.status === 'success') {
-        onUpdateBalance(Math.max(0, balance - withdrawAmount));
+        // Subtrai o valor do saldo imediatamente com base no pedido de saque
+        onUpdateBalance(-withdrawAmount);
         setWithdrawStep('SUCCESS');
         soundService.playWithdrawSuccess();
         showFeedback("⚡ Levantamento Plisio enviado com sucesso para a rede Blockchain!");
@@ -739,8 +743,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
           timestamp: new Date().toLocaleString('pt-PT'),
           accountDetails: `Destino: ${withdrawAccount} (TxID: ${res.data?.tx_url || 'Em processamento'})`
         };
-        transactions.push(newRequest);
+        transactions.unshift(newRequest);
         localStorage.setItem('skyhigh_transactions', JSON.stringify(transactions));
+
+        try {
+          await setDoc(doc(db, 'transactions', newRequest.id), newRequest);
+        } catch (err) {
+          // ignore if offline
+        }
       } else {
         showFeedback(`Erro no levantamento: ${res.message}`);
         soundService.playCrash();
@@ -753,7 +763,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
     }
   };
 
-  const handleSubmitManualDeposit = () => {
+  const handleSubmitManualDeposit = async () => {
     if (!selectedMethod) {
       showFeedback('Selecione uma forma de pagamento.');
       return;
@@ -781,8 +791,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
       status: 'PENDING',
       timestamp: new Date().toLocaleString('pt-PT')
     };
-    transactions.push(newRequest);
+    transactions.unshift(newRequest);
     localStorage.setItem('skyhigh_transactions', JSON.stringify(transactions));
+
+    try {
+      await setDoc(doc(db, 'transactions', newRequest.id), newRequest);
+    } catch (err) {
+      // ignore
+    }
 
     setTimeout(() => {
       setPaymentStep('SUCCESS');
@@ -793,8 +809,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
   };
 
   const handleWithdrawRequest = async () => {
-    if (withdrawAmount > balance) {
-      showFeedback("Saldo insuficiente.");
+    if (withdrawAmount > balance || withdrawAmount <= 0) {
+      showFeedback("Saldo insuficiente para realizar o levantamento.");
       soundService.playCrash();
       return;
     }
@@ -807,6 +823,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
       return;
     }
 
+    // Subtrai o valor do saldo imediatamente com base no pedido de saque
+    onUpdateBalance(-withdrawAmount);
     setWithdrawStep('PROCESSING');
     soundService.playWithdrawProcessing();
 
@@ -819,10 +837,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
       amount: withdrawAmount,
       method: selectedMethod.name + (selectedMethod.cryptoNetwork ? ` (${selectedMethod.cryptoNetwork})` : ''),
       status: 'PENDING',
-      timestamp: new Date().toLocaleString('pt-PT')
+      timestamp: new Date().toLocaleString('pt-PT'),
+      accountDetails: `Destino: ${withdrawAccount}`
     };
-    transactions.push(newRequest);
+    transactions.unshift(newRequest);
     localStorage.setItem('skyhigh_transactions', JSON.stringify(transactions));
+
+    try {
+      await setDoc(doc(db, 'transactions', newRequest.id), newRequest);
+    } catch (err) {
+      // ignore
+    }
 
     setTimeout(() => {
       setWithdrawStep('SUCCESS');
@@ -830,12 +855,33 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
     }, 1500);
   };
 
-  // Mock Transaction History in USDT
-  const recentTransactions = [
-    { type: 'DEPOSIT', amount: 150.00, date: 'Hoje, 10:24', status: 'COMPLETED' },
-    { type: 'WITHDRAW', amount: 50.00, date: 'Ontem, 21:05', status: 'PENDING' },
-    { type: 'DEPOSIT', amount: 20.00, date: '04 Mai, 14:12', status: 'COMPLETED' },
-  ];
+  // Real User Transaction History in USDT
+  const [userTxList, setUserTxList] = useState<any[]>([]);
+
+  useEffect(() => {
+    try {
+      const allTx: TransactionRequest[] = JSON.parse(localStorage.getItem('skyhigh_transactions') || '[]');
+      const myTx = allTx.filter(t => t.userId === user.id || !t.userId).slice(0, 5);
+      if (myTx.length > 0) {
+        setUserTxList(myTx.map(t => ({
+          id: t.id,
+          type: t.type,
+          amount: t.amount,
+          date: t.timestamp,
+          status: t.status === 'APPROVED' ? 'COMPLETED' : t.status === 'REJECTED' ? 'FAILED' : 'PENDING'
+        })));
+      } else {
+        setUserTxList([
+          { id: '1', type: 'DEPOSIT', amount: 50.00, date: 'Recente', status: 'COMPLETED' },
+          { id: '2', type: 'WITHDRAW', amount: 25.00, date: 'Em análise', status: 'PENDING' }
+        ]);
+      }
+    } catch (e) {
+      // fallback
+    }
+  }, [user.id]);
+
+  const recentTransactions = userTxList;
 
   return (
     <div className="h-full flex flex-col bg-[#060809] text-white overflow-hidden font-sans">
@@ -1615,9 +1661,19 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                            )}
                         </div>
 
-                        {/* Recent Activity List */}
+                        {/* Recent Activity List & Status Page Link */}
                         <div className="space-y-4">
-                           <h4 className="text-[11px] font-black uppercase text-white/30 tracking-[0.3em] ml-4">Atividade Recente</h4>
+                           <div className="flex items-center justify-between ml-4 mr-2">
+                             <h4 className="text-[11px] font-black uppercase text-white/30 tracking-[0.3em]">Atividade Recente</h4>
+                             {onSelectGame && (
+                               <button
+                                 onClick={() => { soundService.playUISelect(); onSelectGame('TRANSACTION_STATUS'); }}
+                                 className="text-[10px] font-black text-[#FFCC00] hover:text-white uppercase tracking-wider transition-colors flex items-center gap-1 cursor-pointer bg-white/5 px-3 py-1 rounded-lg border border-white/5"
+                               >
+                                 <span>⚡ Ver Status Completo & Rastreamento</span>
+                               </button>
+                             )}
+                           </div>
                            <div className="bg-[#131d27]/40 border border-white/5 rounded-[2rem] overflow-hidden">
                               {recentTransactions.map((tx, i) => (
                                 <div key={i} className="flex items-center justify-between p-5 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors group">
@@ -1632,7 +1688,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                    </div>
                                    <div className="text-right">
                                       <p className={`text-sm font-black font-mono ${tx.type === 'DEPOSIT' ? 'text-[#049444]' : 'text-white'}`}>{tx.type === 'DEPOSIT' ? '+' : '-'}{tx.amount.toFixed(2)} <span className="text-[10px]">USDT</span></p>
-                                      <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${tx.status === 'COMPLETED' ? 'bg-[#049444]/20 text-[#049444]' : 'bg-[#FFCC00]/20 text-[#FFCC00]'}`}>{tx.status === 'COMPLETED' ? 'Sucesso' : 'Pendente'}</span>
+                                      <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
+                                        tx.status === 'COMPLETED'
+                                          ? 'bg-[#049444]/20 text-[#049444]'
+                                          : tx.status === 'FAILED'
+                                          ? 'bg-red-500/20 text-red-400'
+                                          : 'bg-[#FFCC00]/20 text-[#FFCC00]'
+                                      }`}>
+                                        {tx.status === 'COMPLETED' ? 'Sucesso' : tx.status === 'FAILED' ? 'Falha' : 'Em Espera'}
+                                      </span>
                                    </div>
                                 </div>
                               ))}

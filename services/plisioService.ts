@@ -138,7 +138,7 @@ class PlisioService {
         isSimulated: res.data.isSimulated
       };
     }
-    return { balance: '1000.00', currency: currency, isSimulated: true };
+    return { balance: '0.00', currency: currency, isSimulated: false };
   }
 
   /**

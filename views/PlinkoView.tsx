@@ -82,7 +82,7 @@ const PlinkoView: React.FC<PlinkoViewProps> = ({ balance, onUpdateBalance, onBac
       }));
     }, 150);
     return () => clearInterval(interval);
-  }, [bet, rows, multipliers]);
+  }, [bet, rows, risk]);
 
   return (
     <div className="h-full flex flex-col bg-[#0b0e11] text-white overflow-hidden">

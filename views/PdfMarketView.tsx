@@ -16,24 +16,15 @@ import {
   Sparkles,
   ChevronRight,
   Bookmark,
-  Share2
+  Share2,
+  Image as ImageIcon,
+  Camera,
+  Trash2
 } from 'lucide-react';
 import { collection, addDoc, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { soundService } from '../services/soundService';
-
-interface PdfBook {
-  id: string;
-  title: string;
-  author: string;
-  description: string;
-  price: number;
-  sellerId: string;
-  sellerName: string;
-  coverColor: string;
-  createdAt: string;
-  downloads: number;
-}
+import { PdfBook } from '../types';
 
 interface PdfMarketViewProps {
   balance: number;
@@ -51,6 +42,14 @@ const PDF_COVERS = [
   'from-slate-700 to-slate-900'
 ];
 
+const PRESET_COVER_IMAGES = [
+  { label: 'Aviator Pro', url: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=600&q=80' },
+  { label: 'Análise Técnica', url: 'https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=600&q=80' },
+  { label: 'Mindset Trader', url: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80' },
+  { label: 'Mines & Estratégia', url: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=600&q=80' },
+  { label: 'Criptomoedas', url: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=600&q=80' }
+];
+
 const INITIAL_BOOKS: PdfBook[] = [
   {
     id: 'pdf_1',
@@ -61,6 +60,7 @@ const INITIAL_BOOKS: PdfBook[] = [
     sellerId: 'admin_seller',
     sellerName: 'Mateus Pro Trader',
     coverColor: 'from-orange-600 to-red-600',
+    coverImage: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=600&q=80',
     createdAt: new Date().toISOString(),
     downloads: 142
   },
@@ -73,6 +73,7 @@ const INITIAL_BOOKS: PdfBook[] = [
     sellerId: 'admin_seller',
     sellerName: 'Sandra Silva',
     coverColor: 'from-blue-600 to-indigo-900',
+    coverImage: 'https://images.unsplash.com/photo-1642543492481-44e81e3914a7?auto=format&fit=crop&w=600&q=80',
     createdAt: new Date().toISOString(),
     downloads: 98
   },
@@ -85,6 +86,7 @@ const INITIAL_BOOKS: PdfBook[] = [
     sellerId: 'user_seller_1',
     sellerName: 'Ricardo Tubarão',
     coverColor: 'from-emerald-600 to-teal-900',
+    coverImage: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80',
     createdAt: new Date().toISOString(),
     downloads: 65
   },
@@ -97,6 +99,7 @@ const INITIAL_BOOKS: PdfBook[] = [
     sellerId: 'user_seller_2',
     sellerName: 'Kipungo Dourado',
     coverColor: 'from-purple-600 to-pink-900',
+    coverImage: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=600&q=80',
     createdAt: new Date().toISOString(),
     downloads: 211
   }
@@ -116,8 +119,30 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [selectedCover, setSelectedCover] = useState(PDF_COVERS[0]);
+  const [coverImage, setCoverImage] = useState<string>(PRESET_COVER_IMAGES[0].url);
+  const [customCoverUrl, setCustomCoverUrl] = useState('');
   const [pdfFileName, setPdfFileName] = useState('');
   const [isListing, setIsListing] = useState(false);
+
+  // Handle Cover Photo Upload (PNG, JPG, WEBP)
+  const handleCoverImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            setCoverImage(event.target.result as string);
+            soundService.playUISelect();
+            showAlert('Foto de capa carregada com sucesso!', 'success');
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        showAlert('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WEBP).', 'error');
+      }
+    }
+  };
 
   // Purchased books local list
   const [purchasedBookIds, setPurchasedBookIds] = useState<string[]>([]);
@@ -163,6 +188,7 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
             sellerId: data.sellerId,
             sellerName: data.sellerName,
             coverColor: data.coverColor || 'from-blue-600 to-indigo-900',
+            coverImage: data.coverImage || data.imageUrl,
             createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
             downloads: data.downloads || 0
           });
@@ -256,6 +282,8 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
       return;
     }
 
+    const finalCoverImage = coverImage || customCoverUrl.trim() || PRESET_COVER_IMAGES[0].url;
+
     const newBookPayload = {
       title: newTitle,
       author: newAuthor,
@@ -264,6 +292,7 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
       sellerId: currentUserId,
       sellerName: currentUserName,
       coverColor: selectedCover,
+      coverImage: finalCoverImage,
       downloads: 0,
       createdAt: new Date().toISOString()
     };
@@ -299,6 +328,9 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
         pdfDescription: newDesc,
         pdfPrice: priceNum,
         pdfCoverColor: selectedCover,
+        imageUrl: finalCoverImage,
+        coverImage: finalCoverImage,
+        pdfImage: finalCoverImage,
         pdfDownloads: 0,
         pdfCategory: 'E-Book',
         pdfLevel: 'Todos os Níveis',
@@ -321,6 +353,8 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
     setNewDesc('');
     setNewPrice('');
     setPdfFileName('');
+    setCustomCoverUrl('');
+    setCoverImage(PRESET_COVER_IMAGES[0].url);
     setIsListing(false);
     showAlert('O seu livro PDF foi listado com sucesso no Marketplace!', 'success');
     setActiveTab('browse');
@@ -480,52 +514,72 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredBooks.map((book) => {
                 const isOwned = purchasedBookIds.includes(book.id);
                 return (
                   <motion.div 
                     key={book.id}
-                    whileHover={{ y: -4 }}
-                    className="bg-[#131d27]/50 border border-white/5 rounded-3xl p-4 flex flex-col justify-between hover:border-white/10 transition-all relative group"
+                    whileHover={{ y: -3 }}
+                    className="bg-[#131d27]/50 border border-white/5 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between hover:border-white/10 transition-all relative group overflow-hidden"
                   >
-                    <div className="space-y-4">
-                      {/* Interactive Cover Design */}
-                      <div className={`h-48 w-full bg-gradient-to-br ${book.coverColor} rounded-2xl flex flex-col justify-between p-4 shadow-xl border border-white/10 relative overflow-hidden group-hover:shadow-[#049444]/10 transition-all duration-300`}>
-                        <div className="absolute inset-0 bg-black/10 mix-blend-overlay" />
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-xl transform translate-x-4 -translate-y-4" />
+                    <div className="space-y-2.5">
+                      {/* Interactive Visual Cover Photo Design */}
+                      <div className={`h-40 sm:h-44 w-full bg-gradient-to-br ${book.coverColor} rounded-xl flex flex-col justify-between p-3 shadow-lg border border-white/10 relative overflow-hidden group-hover:shadow-[#049444]/20 transition-all duration-300`}>
+                        {book.coverImage ? (
+                          <>
+                            <img 
+                              src={book.coverImage} 
+                              alt={book.title}
+                              referrerPolicy="no-referrer"
+                              className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                            {/* Realistic Book Gradient and Spine Overlay */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/25 pointer-events-none" />
+                            <div className="absolute left-0 top-0 bottom-0 w-2 bg-white/20 border-r border-black/30 backdrop-blur-[1px] pointer-events-none" />
+                          </>
+                        ) : (
+                          <>
+                            <div className="absolute inset-0 bg-black/10 mix-blend-overlay" />
+                            <div className="absolute top-0 right-0 w-20 h-20 bg-white/5 rounded-full blur-xl transform translate-x-4 -translate-y-4" />
+                          </>
+                        )}
                         
-                        <div className="flex justify-between items-start">
-                          <span className="text-[8px] font-black tracking-widest text-white/80 bg-black/20 backdrop-blur-md px-2 py-0.5 rounded uppercase">E-BOOK PDF</span>
-                          <BookOpen className="w-5 h-5 text-white/80" />
+                        <div className="flex justify-between items-start z-10">
+                          <span className="text-[8px] font-black tracking-widest text-white bg-black/60 border border-white/20 backdrop-blur-md px-2 py-0.5 rounded-md uppercase flex items-center gap-1 shadow-sm">
+                            <BookOpen className="w-2.5 h-2.5 text-[#FFCC00]" /> E-BOOK PDF
+                          </span>
+                          <span className="text-[8px] font-bold text-white/90 bg-black/50 backdrop-blur-md px-1.5 py-0.5 rounded border border-white/10">
+                            {book.downloads} downloads
+                          </span>
                         </div>
 
-                        <div className="space-y-1.5 z-10">
-                          <h4 className="text-base font-black text-white leading-tight drop-shadow uppercase">{book.title}</h4>
-                          <span className="text-[10px] text-white/70 font-semibold block italic">por {book.author}</span>
+                        <div className="space-y-0.5 z-10 mt-auto">
+                          <h4 className="text-xs sm:text-sm font-black text-white leading-tight drop-shadow-md uppercase line-clamp-2">{book.title}</h4>
+                          <span className="text-[9px] text-[#FFCC00] font-bold block italic truncate drop-shadow">por {book.author}</span>
                         </div>
 
-                        <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                          <span className="text-[7px] font-black text-[#FFCC00] uppercase tracking-wider block">CRYPTON DIGITAL</span>
-                          <span className="text-[8px] font-bold text-white/60">{book.downloads} downloads</span>
+                        <div className="flex justify-between items-center pt-1.5 border-t border-white/15 z-10">
+                          <span className="text-[7px] font-black text-white/80 uppercase tracking-wider block">CRYPTON DIGITAL</span>
+                          <span className="text-[7px] font-black text-emerald-400 bg-emerald-950/70 border border-emerald-500/30 px-1.5 py-0.2 rounded uppercase">VERIFICADO</span>
                         </div>
                       </div>
 
                       {/* Info & Details */}
-                      <div className="space-y-2 px-1">
+                      <div className="space-y-1 px-0.5">
                         <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Autor: {book.author}</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">Autor: {book.author}</span>
                         </div>
-                        <p className="text-xs sm:text-sm text-slate-200 font-semibold leading-relaxed line-clamp-3">
+                        <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-snug line-clamp-2">
                           {book.description}
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+                    <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between">
                       <div className="flex flex-col">
-                        <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Preço Único</span>
-                        <span className="text-sm font-black font-mono text-[#FFCC00]">
+                        <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Preço</span>
+                        <span className="text-xs sm:text-sm font-black font-mono text-[#FFCC00]">
                           {book.price.toFixed(2)} USDT
                         </span>
                       </div>
@@ -533,15 +587,15 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
                       {isOwned ? (
                         <button 
                           onClick={() => { soundService.playUISelect(); setActiveTab('my-books'); }}
-                          className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                          className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer flex items-center gap-1"
                         >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          Ver Biblioteca
+                          <CheckCircle className="w-3 h-3" />
+                          Biblioteca
                         </button>
                       ) : (
                         <button 
                           onClick={() => handleBuyBook(book)}
-                          className="px-5 py-2.5 bg-[#049444] hover:bg-[#037c39] active:scale-95 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-[#049444]/15"
+                          className="px-3.5 py-1.5 bg-[#049444] hover:bg-[#037c39] active:scale-95 text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer flex items-center gap-1 shadow-md shadow-[#049444]/15"
                         >
                           Comprar PDF
                         </button>
@@ -583,40 +637,55 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
                   return (
                     <motion.div 
                       key={book.id}
-                      className="bg-[#131d27]/50 border border-white/5 rounded-3xl p-4 flex flex-col justify-between hover:border-white/10 transition-all"
+                      className="bg-[#131d27]/50 border border-white/5 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between hover:border-white/10 transition-all overflow-hidden"
                     >
-                      <div className="space-y-4">
-                        <div className={`h-40 w-full bg-gradient-to-br ${book.coverColor} rounded-2xl flex flex-col justify-between p-4 shadow-lg border border-white/10 relative overflow-hidden`}>
-                          <div className="absolute inset-0 bg-black/15 mix-blend-overlay" />
-                          <div className="flex justify-between items-start">
-                            <span className="text-[7px] font-black tracking-widest text-white/80 bg-emerald-500/80 px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                              <CheckCircle className="w-2.5 h-2.5" /> Adquirido
+                      <div className="space-y-2.5">
+                        <div className={`h-36 sm:h-40 w-full bg-gradient-to-br ${book.coverColor} rounded-xl flex flex-col justify-between p-3 shadow-md border border-white/10 relative overflow-hidden group`}>
+                          {book.coverImage ? (
+                            <>
+                              <img 
+                                src={book.coverImage} 
+                                alt={book.title} 
+                                referrerPolicy="no-referrer"
+                                className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/25 pointer-events-none" />
+                              <div className="absolute left-0 top-0 bottom-0 w-2 bg-white/20 border-r border-black/30 backdrop-blur-[1px] pointer-events-none" />
+                            </>
+                          ) : (
+                            <div className="absolute inset-0 bg-black/15 mix-blend-overlay" />
+                          )}
+
+                          <div className="flex justify-between items-start z-10">
+                            <span className="text-[8px] font-black tracking-widest text-white bg-emerald-600/90 border border-emerald-400/30 backdrop-blur-md px-2 py-0.5 rounded uppercase flex items-center gap-1">
+                              <CheckCircle className="w-2.5 h-2.5 text-white" /> Adquirido
                             </span>
-                            <BookMarked className="w-4 h-4 text-white/80" />
+                            <BookMarked className="w-3.5 h-3.5 text-white/90" />
                           </div>
-                          <div className="space-y-1 z-10">
-                            <h4 className="text-sm font-black text-white leading-tight uppercase truncate">{book.title}</h4>
-                            <span className="text-[9px] text-white/70 font-semibold block italic">por {book.author}</span>
+
+                          <div className="space-y-0.5 z-10 mt-auto">
+                            <h4 className="text-xs sm:text-sm font-black text-white leading-tight uppercase truncate drop-shadow">{book.title}</h4>
+                            <span className="text-[9px] text-[#FFCC00] font-semibold block italic truncate">por {book.author}</span>
                           </div>
                         </div>
 
-                        <div className="space-y-1.5 px-1">
-                          <h4 className="text-sm font-bold text-white uppercase truncate">{book.title}</h4>
-                          <p className="text-xs sm:text-sm text-slate-200 font-semibold leading-relaxed line-clamp-2">
+                        <div className="space-y-1 px-0.5">
+                          <h4 className="text-xs font-bold text-white uppercase truncate">{book.title}</h4>
+                          <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-snug line-clamp-2">
                             {book.description}
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-4 pt-3 border-t border-white/5 space-y-3">
-                        <div className="flex justify-between text-[8px] text-slate-500 font-black uppercase tracking-widest">
-                          <span>Formato: PDF Seguro</span>
-                          <span>Tamanho: ~4.8 MB</span>
+                      <div className="mt-3 pt-2 border-t border-white/5 space-y-2">
+                        <div className="flex justify-between text-[7px] text-slate-500 font-black uppercase tracking-widest">
+                          <span>Formato: PDF</span>
+                          <span>~4.8 MB</span>
                         </div>
 
                         {isDownloading ? (
                           <div className="space-y-1">
-                            <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest text-slate-400">
+                            <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-widest text-slate-400">
                               <span className="animate-pulse">A Descarregar...</span>
                               <span className="font-mono">{downloadProgress}%</span>
                             </div>
@@ -630,9 +699,9 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
                         ) : (
                           <button 
                             onClick={() => handleDownloadPdf(book)}
-                            className="w-full py-2.5 bg-[#049444] hover:bg-[#037c39] text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-[#049444]/15 active:scale-95"
+                            className="w-full py-2 bg-[#049444] hover:bg-[#037c39] text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
                           >
-                            <Download className="w-4 h-4" />
+                            <Download className="w-3.5 h-3.5" />
                             Descarregar PDF
                           </button>
                         )}
@@ -718,7 +787,7 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Fazer Upload do PDF</label>
+                  <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Fazer Upload do Arquivo PDF</label>
                   <div className="relative">
                     <input 
                       type="file" 
@@ -732,39 +801,122 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
                       className="w-full bg-[#131d27] border border-dashed border-white/20 rounded-xl px-4 py-2 text-xs text-slate-400 flex items-center justify-between cursor-pointer hover:border-[#049444] hover:text-white transition-all overflow-hidden"
                     >
                       <span className="truncate max-w-[150px]">{pdfFileName || 'Selecionar arquivo .pdf'}</span>
-                      <Download className="w-3.5 h-3.5 shrink-0" />
+                      <Download className="w-3.5 h-3.5 shrink-0 text-[#FFCC00]" />
                     </label>
                   </div>
                 </div>
               </div>
 
-              {/* Design Customizer cover preview */}
-              <div className="space-y-2">
-                <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Estilo da Capa do Livro</label>
-                <div className="flex gap-2.5">
-                  {PDF_COVERS.map((cov) => (
-                    <button
-                      key={cov}
-                      type="button"
-                      onClick={() => setSelectedCover(cov)}
-                      className={`w-10 h-10 rounded-xl bg-gradient-to-br ${cov} border-2 transition-all cursor-pointer ${selectedCover === cov ? 'border-[#FFCC00] scale-110 shadow' : 'border-transparent hover:scale-105'}`}
+              {/* Cover Photo Upload & Customizer */}
+              <div className="space-y-3 p-4 bg-white/5 rounded-2xl border border-white/5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[9px] font-black text-white uppercase tracking-widest flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-[#FFCC00]" /> Foto da Capa do Livro PDF
+                  </label>
+                  <span className="text-[8px] font-bold text-emerald-400 uppercase">Aparece no Card do Marketplace</span>
+                </div>
+
+                {/* Upload or URL options */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleCoverImageUpload}
+                      id="cover-image-upload" 
+                      className="hidden"
                     />
-                  ))}
+                    <label 
+                      htmlFor="cover-image-upload"
+                      className="w-full flex items-center justify-center gap-2 p-2.5 bg-[#131d27] hover:bg-[#1a2735] text-white border border-white/10 hover:border-[#049444] rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer transition-all shadow-sm"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#FFCC00]" /> Carregar Foto do Computador/Celular
+                    </label>
+                  </div>
+
+                  <div>
+                    <input 
+                      type="url"
+                      value={customCoverUrl}
+                      onChange={(e) => {
+                        setCustomCoverUrl(e.target.value);
+                        if (e.target.value.trim()) setCoverImage(e.target.value.trim());
+                      }}
+                      placeholder="Ou cole a URL da imagem da capa..."
+                      className="w-full bg-[#131d27] border border-white/10 rounded-xl px-3 py-2 text-[10px] text-white focus:outline-none focus:border-[#049444]"
+                    />
+                  </div>
+                </div>
+
+                {/* Cover Presets */}
+                <div className="space-y-1.5">
+                  <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest block">Ou selecione uma capa temática premium:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {PRESET_COVER_IMAGES.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          setCoverImage(preset.url);
+                          setCustomCoverUrl('');
+                          soundService.playUISelect();
+                        }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[9px] font-black uppercase transition-all cursor-pointer ${
+                          coverImage === preset.url 
+                            ? 'bg-[#FFCC00] text-black border-[#FFCC00] shadow-md' 
+                            : 'bg-black/30 text-slate-300 border-white/10 hover:border-white/30'
+                        }`}
+                      >
+                        <img src={preset.url} alt={preset.label} className="w-4 h-4 rounded object-cover" />
+                        <span>{preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Gradient Fallback Selector */}
+                <div className="space-y-1.5 pt-2 border-t border-white/5">
+                  <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest block">Cor de Fundo / Gradiente:</span>
+                  <div className="flex gap-2">
+                    {PDF_COVERS.map((cov) => (
+                      <button
+                        key={cov}
+                        type="button"
+                        onClick={() => setSelectedCover(cov)}
+                        className={`w-8 h-8 rounded-lg bg-gradient-to-br ${cov} border-2 transition-all cursor-pointer ${selectedCover === cov ? 'border-[#FFCC00] scale-110 shadow' : 'border-transparent hover:scale-105'}`}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Live Card Preview */}
-              <div className="p-4 bg-black/20 rounded-2xl border border-white/5 space-y-2">
-                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest block">Pré-visualização do Marketplace</span>
+              {/* Live Card Preview with Cover Photo */}
+              <div className="p-4 bg-black/40 rounded-2xl border border-white/10 space-y-2">
+                <span className="text-[8px] font-black text-[#FFCC00] uppercase tracking-widest block flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Pré-visualização do Card no Marketplace
+                </span>
                 <div className="flex gap-4 items-center">
-                  <div className={`w-16 h-20 bg-gradient-to-br ${selectedCover} rounded-lg flex flex-col justify-between p-2 shadow shrink-0 border border-white/10`}>
-                    <BookOpen className="w-3 h-3 text-white/80" />
-                    <span className="text-[6px] font-black text-white uppercase leading-none truncate">{newTitle || 'Título do Livro'}</span>
+                  <div className={`w-20 h-28 bg-gradient-to-br ${selectedCover} rounded-xl relative overflow-hidden shadow-xl shrink-0 border border-white/20`}>
+                    {coverImage ? (
+                      <>
+                        <img src={coverImage} alt="Cover Preview" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
+                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-white/30 border-r border-black/40 pointer-events-none" />
+                      </>
+                    ) : null}
+                    <div className="absolute top-1 left-1 bg-black/60 backdrop-blur-xs px-1 py-0.2 rounded text-[6px] font-black text-white">PDF</div>
+                    <div className="absolute bottom-1.5 left-1.5 right-1.5">
+                      <span className="text-[7px] font-black text-white uppercase leading-tight block truncate drop-shadow">{newTitle || 'Título do Livro'}</span>
+                      <span className="text-[6px] text-[#FFCC00] font-bold block truncate drop-shadow">{newAuthor || 'Autor'}</span>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <h4 className="text-xs font-black text-white uppercase">{newTitle || 'Seu Lindo E-Book PDF'}</h4>
-                    <span className="text-[9px] text-slate-400 font-bold">Autor: {newAuthor || 'Seu Nome'}</span>
-                    <span className="text-[10px] font-bold text-[#FFCC00] block">{parseFloat(newPrice) ? '' + parseFloat(newPrice).toFixed(2) + ' USDT' : '--- USDT'}</span>
+                  <div className="space-y-1.5">
+                    <h4 className="text-xs font-black text-white uppercase">{newTitle || 'Seu E-Book PDF com Foto de Capa'}</h4>
+                    <p className="text-[10px] text-slate-400 line-clamp-2">{newDesc || 'A descrição e a foto da capa serão exibidas em destaque para todos os compradores do mercado.'}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black font-mono text-[#FFCC00]">{parseFloat(newPrice) ? parseFloat(newPrice).toFixed(2) + ' USDT' : '--- USDT'}</span>
+                      <span className="text-[8px] bg-[#049444]/20 text-emerald-400 px-2 py-0.5 rounded font-black uppercase">Foto Ativa</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -772,9 +924,10 @@ const PdfMarketView: React.FC<PdfMarketViewProps> = ({ balance, isDemo, onUpdate
               <button
                 type="submit"
                 disabled={isListing}
-                className="w-full py-3 bg-[#049444] hover:bg-[#037c39] disabled:opacity-50 text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-[#049444]/20 cursor-pointer active:scale-95"
+                className="w-full py-3.5 bg-[#049444] hover:bg-[#037c39] disabled:opacity-50 text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-[#049444]/20 cursor-pointer active:scale-95 flex items-center justify-center gap-2"
               >
-                {isListing ? 'A Publicar E-Book...' : 'Publicar Livro no Marketplace'}
+                <PlusCircle className="w-4 h-4" />
+                {isListing ? 'A Publicar E-Book...' : 'Publicar Livro com Foto no Marketplace'}
               </button>
             </form>
           </div>

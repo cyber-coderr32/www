@@ -61,7 +61,7 @@ const PROMO_SLIDES: PromoSlide[] = [
     badge: "OFERTA",
     color: "from-[#049444] to-[#037235]",
     image: "🏅",
-    action: "DEPOSITAR AGORA",
+    action: "VER OFERTA",
   },
   {
     id: 2,
@@ -244,24 +244,6 @@ const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelect
         </button>
 
         <div className="flex items-center gap-2">
-          {/* Botão de Depósito Cripto no Header */}
-          <button
-            onClick={() => {
-              soundService.playUISelect();
-              if (onOpenDeposit) onOpenDeposit();
-              else onGoToProfile();
-            }}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-black px-3 py-1.5 md:py-2 rounded-xl transition-all font-black uppercase text-[10px] md:text-xs cursor-pointer select-none active:scale-95 shadow-lg group border border-yellow-300/40"
-            title="Depósito Cripto Automático (Plisio Multi-Chain)"
-          >
-            <Zap className="w-3.5 h-3.5 fill-black text-black group-hover:scale-110 transition-transform animate-pulse" />
-            <span className="hidden sm:inline font-black">Depósito Cripto</span>
-            <span className="sm:hidden font-black">+ Cripto</span>
-            <span className="bg-black text-[#FFCC00] text-[8px] px-1 py-0.2 rounded font-black hidden md:inline">
-              +5% BÓNUS
-            </span>
-          </button>
-
           {/* Botão de Comunidade / Social no Header */}
           <button
             onClick={() => {
