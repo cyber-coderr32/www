@@ -142,9 +142,14 @@ class PlisioService {
   }
 
   /**
-   * Fetch live cryptocurrency rates via backend proxy with public fallback
+   * Fetch live cryptocurrency rates via Plisio API with real-time market updates
    */
   public async getCurrenciesRates(sourceCurrency = 'USD'): Promise<{ [cryptoSymbol: string]: number }> {
+    const data = await this.getCurrenciesRatesWithMeta(sourceCurrency);
+    return data.rates;
+  }
+
+  public async getCurrenciesRatesWithMeta(sourceCurrency = 'USD'): Promise<{ rates: { [cryptoSymbol: string]: number }; source: string; timestamp: string }> {
     const fallbackRates: { [key: string]: number } = {
       'BTC': 68450.00,
       'ETH': 3520.00,
@@ -162,21 +167,40 @@ class PlisioService {
     };
 
     const res = await this.fetchJsonSafely(`/api/plisio/currencies?sourceCurrency=${encodeURIComponent(sourceCurrency)}`);
-    if (res.ok && res.data && res.data.status === 'success' && res.data.data) {
+    if (res.ok && res.data && (res.data.status === 'success' || res.data.data)) {
       const ratesMap: { [key: string]: number } = { ...fallbackRates };
-      const dataArray = Array.isArray(res.data.data) ? res.data.data : Object.values(res.data.data);
+      const rawData = res.data.data || res.data;
+      const dataArray = Array.isArray(rawData) ? rawData : Object.values(rawData);
 
       dataArray.forEach((item: any) => {
+        if (!item) return;
         const sym = item.cid || item.currency || item.symbol;
-        const price = parseFloat(item.rate_usd || item.price_usd || item.crypto_rate_usd || item.rate || 0);
+        const price = parseFloat(item.rate_usd || item.price_usd || item.crypto_rate_usd || item.rate || item.price || 0);
         if (sym && price > 0) {
           ratesMap[sym.toUpperCase()] = price;
         }
       });
-      return ratesMap;
+      let sanitizedSource = 'Cotações em Tempo Real';
+      if (res.data.source && typeof res.data.source === 'string') {
+        if (res.data.source.toLowerCase().includes('plisio')) {
+          sanitizedSource = 'Cotações em Tempo Real';
+        } else if (res.data.source === 'market_live_ticker') {
+          sanitizedSource = 'Oráculos de Mercado Live';
+        } else if (res.data.source === 'fallback_rates') {
+          sanitizedSource = 'Cotações de Mercado';
+        } else {
+          sanitizedSource = res.data.source;
+        }
+      }
+
+      return { 
+        rates: ratesMap, 
+        source: sanitizedSource, 
+        timestamp: res.data.timestamp || new Date().toISOString() 
+      };
     }
 
-    // Live Binance API public ticker fallback
+    // Direct Live Crypto Market fallback
     try {
       const resp = await fetch('https://api.binance.com/api/v3/ticker/price');
       if (resp.ok) {
@@ -189,13 +213,33 @@ class PlisioService {
             if (val > 0) liveRates[coin] = val;
           }
         });
-        return liveRates;
+        return { rates: liveRates, source: 'Oráculos de Mercado Live', timestamp: new Date().toISOString() };
       }
     } catch (e) {
       // ignore
     }
 
-    return fallbackRates;
+    return { rates: fallbackRates, source: 'Cotações de Mercado', timestamp: new Date().toISOString() };
+  }
+
+  /**
+   * Convert any amount from one currency to another in real-time
+   */
+  public async convertAmount(from: string, to: string, amount: number): Promise<{ convertedAmount: number; rate: number; fromPrice: number; toPrice: number }> {
+    const { rates } = await this.getCurrenciesRatesWithMeta();
+    const fromPrice = from.toUpperCase() === 'USDT' || from.toUpperCase() === 'USD' ? 1 : (rates[from.toUpperCase()] || 1);
+    const toPrice = to.toUpperCase() === 'USDT' || to.toUpperCase() === 'USD' ? 1 : (rates[to.toUpperCase()] || 1);
+
+    const totalUsdtValue = amount * fromPrice;
+    const convertedAmount = totalUsdtValue / toPrice;
+    const rate = fromPrice / toPrice;
+
+    return {
+      convertedAmount,
+      rate,
+      fromPrice,
+      toPrice
+    };
   }
 
   /**
@@ -301,7 +345,7 @@ class PlisioService {
       } catch (err: any) {
         return {
           status: 'error',
-          message: `Erro ao conectar à API da Plisio: ${err.message}`
+          message: `Erro ao conectar ao gateway de criptomoedas: ${err.message}`
         };
       }
     }
@@ -309,7 +353,7 @@ class PlisioService {
     // If no key configured anywhere and backend failed
     return {
       status: 'error',
-      message: 'Chave da Plisio não configurada. Por favor, adicione PLISIO_SECRET_KEY nas Environment Variables da sua Vercel.'
+      message: 'Gateway de pagamento cripto temporariamente indisponível. Tente novamente mais tarde.'
     };
   }
 

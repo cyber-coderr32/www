@@ -66,18 +66,19 @@ const TowerView: React.FC<TowerViewProps> = ({ balance, onUpdateBalance, onBack 
       // Safe
       const newMultiplier = multipliers[difficulty][row];
       setMultiplier(newMultiplier);
-      soundService.playWin();
+      soundService.playTowerFloorAscent(row + 1);
 
       if (row === ROWS - 1) {
         setGameState('WON');
         onUpdateBalance(betAmount * newMultiplier);
+        soundService.playSlotJackpot();
       } else {
         setCurrentRow(row + 1);
       }
     } else {
       // Mine
       setGameState('LOST');
-      soundService.playLoss();
+      soundService.playTowerTrap();
     }
   };
 
@@ -85,7 +86,7 @@ const TowerView: React.FC<TowerViewProps> = ({ balance, onUpdateBalance, onBack 
     if (gameState !== 'PLAYING' || currentRow === 0) return;
     onUpdateBalance(betAmount * multiplier);
     setGameState('WON');
-    soundService.playWin();
+    soundService.playMinesCashout();
   };
 
   return (

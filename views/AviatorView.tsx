@@ -150,7 +150,7 @@ const AviatorView: React.FC<AviatorViewProps> = ({ balance, isDemo, onUpdateBala
   // Handle Crash Event
   const handleCrash = useCallback((finalMultiplier: number) => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (!isMuted) soundService.playCrash();
+    if (!isMuted) soundService.playAviatorFlyAway();
     setStatus(GameStatus.CRASHED);
     setMultiplier(finalMultiplier);
 
@@ -288,7 +288,7 @@ const AviatorView: React.FC<AviatorViewProps> = ({ balance, isDemo, onUpdateBala
             status: 'WIN'
           }, ...prev]);
 
-          if (!isMuted) soundService.playWin();
+          if (!isMuted) soundService.playAviatorCashout();
         }
 
         // Check Auto Cashout for Bet 2
@@ -318,7 +318,7 @@ const AviatorView: React.FC<AviatorViewProps> = ({ balance, isDemo, onUpdateBala
             status: 'WIN'
           }, ...prev]);
 
-          if (!isMuted) soundService.playWin();
+          if (!isMuted) soundService.playAviatorCashout();
         }
 
         // Update live bots cashouts in real time
@@ -439,7 +439,7 @@ const AviatorView: React.FC<AviatorViewProps> = ({ balance, isDemo, onUpdateBala
         status: 'WIN'
       }, ...prev]);
 
-      if (!isMuted) soundService.playWin();
+      if (!isMuted) soundService.playAviatorCashout();
     }
   };
 
@@ -478,7 +478,7 @@ const AviatorView: React.FC<AviatorViewProps> = ({ balance, isDemo, onUpdateBala
         status: 'WIN'
       }, ...prev]);
 
-      if (!isMuted) soundService.playWin();
+      if (!isMuted) soundService.playAviatorCashout();
     }
   };
 

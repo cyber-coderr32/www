@@ -191,11 +191,18 @@ export const authService = {
         if (localSession) {
           try {
             const user = JSON.parse(localSession);
-            if (user?.uid === 'local_guest' || user?.uid === 'local_google_user') {
+            if (!user || user?.uid === 'local_guest' || user?.uid === 'local_google_user' || user?.id === 'local_guest' || user?.id === 'local_google_user') {
               localStorage.removeItem(ACTIVE_SESSION_KEY);
               callback(null);
             } else {
-              callback(user);
+              const normalizedUid = user.uid || user.id || (user.email ? 'local_' + user.email.replace(/[^a-zA-Z0-9]/g, '_') : null);
+              if (normalizedUid) {
+                user.uid = normalizedUid;
+                user.id = normalizedUid;
+                callback(user);
+              } else {
+                callback(null);
+              }
             }
           } catch (e) {
             callback(null);
@@ -211,10 +218,15 @@ export const authService = {
     if (localSession) {
       try {
         const user = JSON.parse(localSession);
-        if (user?.uid === 'local_guest' || user?.uid === 'local_google_user') {
+        if (!user || user?.uid === 'local_guest' || user?.uid === 'local_google_user' || user?.id === 'local_guest' || user?.id === 'local_google_user') {
           localStorage.removeItem(ACTIVE_SESSION_KEY);
         } else {
-          callback(user);
+          const normalizedUid = user.uid || user.id || (user.email ? 'local_' + user.email.replace(/[^a-zA-Z0-9]/g, '_') : null);
+          if (normalizedUid) {
+            user.uid = normalizedUid;
+            user.id = normalizedUid;
+            callback(user);
+          }
         }
       } catch (e) {
         // no-op

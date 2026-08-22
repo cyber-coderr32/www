@@ -67,7 +67,11 @@ const KenoView: React.FC<KenoViewProps> = ({ balance, onUpdateBalance, onBack })
     for (let i = 0; i < result.length; i++) {
       await new Promise(r => setTimeout(r, 200));
       setDrawnNumbers(prev => [...prev, result[i]]);
-      soundService.playMultiplierStep(i);
+      if (selectedNumbers.includes(result[i])) {
+        soundService.playKenoMatch();
+      } else {
+        soundService.playKenoBallPop(i + 1);
+      }
     }
 
     // Check winnings
@@ -87,10 +91,10 @@ const KenoView: React.FC<KenoViewProps> = ({ balance, onUpdateBalance, onBack })
       const win = betAmount * multiplier;
       setWinAmount(win);
       onUpdateBalance(win);
-      soundService.playWin();
+      soundService.playSlotJackpot();
     } else {
       setWinAmount(0);
-      soundService.playLoss();
+      soundService.playDiceLoss();
     }
 
     setIsDrawing(false);

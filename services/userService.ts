@@ -52,10 +52,13 @@ const ACTIVE_SESSION_KEY = 'cryptonbet_local_user_session';
 
 export const userService = {
   getUserProfile: async (uid: string) => {
+    if (!uid || typeof uid !== 'string') {
+      return null;
+    }
     const path = `users/${uid}`;
     if (uid.startsWith('local_')) {
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const user = localUsers.find((u: any) => u.uid === uid);
+      const user = localUsers.find((u: any) => u.uid === uid || u.id === uid);
       return user || null;
     }
     try {
@@ -67,19 +70,24 @@ export const userService = {
     } catch (error) {
       console.warn("Firestore getUserProfile failed, trying local fallback", error);
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const user = localUsers.find((u: any) => u.uid === uid);
+      const user = localUsers.find((u: any) => u.uid === uid || u.id === uid);
       return user || null;
     }
   },
 
   createUserProfile: async (uid: string, profile: any) => {
+    if (!uid || typeof uid !== 'string') {
+      console.warn("createUserProfile called without valid uid:", uid);
+      return;
+    }
     const path = `users/${uid}`;
     if (uid.startsWith('local_')) {
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const index = localUsers.findIndex((u: any) => u.uid === uid);
+      const index = localUsers.findIndex((u: any) => u.uid === uid || u.id === uid);
       const newUser = {
         ...profile,
         uid,
+        id: uid,
         balance: profile.balance !== undefined ? profile.balance : 0.00,
         totalWins: profile.totalWins || 0,
         totalBets: profile.totalBets || 0,
@@ -96,7 +104,7 @@ export const userService = {
       if (activeSession) {
         try {
           const parsed = JSON.parse(activeSession);
-          if (parsed.uid === uid) {
+          if (parsed.uid === uid || parsed.id === uid) {
             localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(newUser));
           }
         } catch (e) {
@@ -110,6 +118,7 @@ export const userService = {
       await setDoc(doc(db, 'users', uid), {
         ...profile,
         uid,
+        id: uid,
         balance: profile.balance !== undefined ? profile.balance : 0.00,
         totalWins: profile.totalWins || 0,
         totalBets: profile.totalBets || 0,
@@ -118,10 +127,11 @@ export const userService = {
     } catch (error) {
       console.warn("Firestore createUserProfile failed, trying local fallback", error);
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const index = localUsers.findIndex((u: any) => u.uid === uid);
+      const index = localUsers.findIndex((u: any) => u.uid === uid || u.id === uid);
       const newUser = {
         ...profile,
         uid,
+        id: uid,
         balance: profile.balance !== undefined ? profile.balance : 0.00,
         totalWins: profile.totalWins || 0,
         totalBets: profile.totalBets || 0,
@@ -137,10 +147,14 @@ export const userService = {
   },
 
   updateUserProfile: async (uid: string, updates: any) => {
+    if (!uid || typeof uid !== 'string') {
+      console.warn("updateUserProfile called without valid uid:", uid);
+      return;
+    }
     const path = `users/${uid}`;
     if (uid.startsWith('local_')) {
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const index = localUsers.findIndex((u: any) => u.uid === uid);
+      const index = localUsers.findIndex((u: any) => u.uid === uid || u.id === uid);
       if (index >= 0) {
         localUsers[index] = {
           ...localUsers[index],
@@ -153,7 +167,7 @@ export const userService = {
         if (activeSession) {
           try {
             const parsed = JSON.parse(activeSession);
-            if (parsed.uid === uid) {
+            if (parsed.uid === uid || parsed.id === uid) {
               localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(localUsers[index]));
             }
           } catch (e) {
@@ -172,7 +186,7 @@ export const userService = {
     } catch (error) {
       console.warn("Firestore updateUserProfile failed, trying local fallback", error);
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const index = localUsers.findIndex((u: any) => u.uid === uid);
+      const index = localUsers.findIndex((u: any) => u.uid === uid || u.id === uid);
       if (index >= 0) {
         localUsers[index] = {
           ...localUsers[index],
@@ -185,10 +199,14 @@ export const userService = {
   },
 
   updateBalance: async (uid: string, newBalance: number, statsUpdate: { winsDelta?: number, betsDelta?: number } = {}) => {
+    if (!uid || typeof uid !== 'string') {
+      console.warn("updateBalance called without valid uid:", uid);
+      return;
+    }
     const path = `users/${uid}`;
     if (uid.startsWith('local_')) {
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const index = localUsers.findIndex((u: any) => u.uid === uid);
+      const index = localUsers.findIndex((u: any) => u.uid === uid || u.id === uid);
       if (index >= 0) {
         localUsers[index].balance = newBalance;
         localUsers[index].totalWins = (localUsers[index].totalWins || 0) + (statsUpdate.winsDelta || 0);
@@ -200,7 +218,7 @@ export const userService = {
         if (activeSession) {
           try {
             const parsed = JSON.parse(activeSession);
-            if (parsed.uid === uid) {
+            if (parsed.uid === uid || parsed.id === uid) {
               localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(localUsers[index]));
             }
           } catch (e) {
@@ -222,7 +240,7 @@ export const userService = {
     } catch (error) {
       console.warn("Firestore updateBalance failed, trying local fallback", error);
       const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
-      const index = localUsers.findIndex((u: any) => u.uid === uid);
+      const index = localUsers.findIndex((u: any) => u.uid === uid || u.id === uid);
       if (index >= 0) {
         localUsers[index].balance = newBalance;
         localUsers[index].totalWins = (localUsers[index].totalWins || 0) + (statsUpdate.winsDelta || 0);
@@ -235,12 +253,14 @@ export const userService = {
 
   logGameResult: async (result: any) => {
     const path = 'game_history';
+    const rawUserId = result?.userId || auth.currentUser?.uid || 'local_anonymous';
+    const finalUserId = String(rawUserId || 'local_anonymous');
     const finalResult = {
       ...result,
-      userId: result.userId || auth.currentUser?.uid || 'local_anonymous'
+      userId: finalUserId
     };
     
-    if (finalResult.userId.startsWith('local_')) {
+    if (finalUserId.startsWith('local_')) {
       const history = JSON.parse(localStorage.getItem('cryptonbet_local_game_history') || '[]');
       history.push({
         ...finalResult,

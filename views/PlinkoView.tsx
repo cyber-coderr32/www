@@ -49,7 +49,7 @@ const PlinkoView: React.FC<PlinkoViewProps> = ({ balance, onUpdateBalance, onBac
     onUpdateBalance(-bet);
     const newBall = { id: ballIdCounter.current++, x: 50, y: 0, row: 0 };
     setBalls(prev => [...prev, newBall]);
-    soundService.playTick();
+    soundService.playPlinkoDrop();
   };
 
   useEffect(() => {
@@ -58,7 +58,7 @@ const PlinkoView: React.FC<PlinkoViewProps> = ({ balance, onUpdateBalance, onBac
         if (ball.row < rows) {
           const direction = Math.random() > 0.5 ? 1 : -1;
           const stepSize = 100 / (rows * 2); 
-          soundService.playTick();
+          soundService.playPlinkoPeg(ball.row);
           return { 
             ...ball, 
             x: ball.x + (direction * stepSize), 
@@ -72,10 +72,10 @@ const PlinkoView: React.FC<PlinkoViewProps> = ({ balance, onUpdateBalance, onBac
            const segmentWidth = 100 / multipliers.length;
            const index = Math.floor(ball.x / segmentWidth);
            const safeIndex = Math.max(0, Math.min(index, multipliers.length - 1));
-           const win = bet * multipliers[safeIndex];
+           const mult = multipliers[safeIndex];
+           const win = bet * mult;
            onUpdateBalance(win);
-           if (win > bet) soundService.playWin();
-           else if (win < bet) soundService.playLoss();
+           soundService.playPlinkoBucket(mult);
            return false;
         }
         return true;

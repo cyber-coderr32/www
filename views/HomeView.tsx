@@ -360,51 +360,6 @@ const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelect
            <FeaturedGames onSelect={onSelectGame} />
         </div>
 
-        {/* B2B iGaming API Portal Banner */}
-        <div className="px-4 md:px-8 mb-8">
-          <motion.div
-            whileHover={{ scale: 1.01 }}
-            onClick={() => {
-              soundService.playUISelect();
-              onSelectGame('API_PORTAL');
-            }}
-            className="bg-gradient-to-r from-blue-950/80 via-[#131d27] to-indigo-950/80 border border-blue-500/30 hover:border-blue-400 p-5 md:p-6 rounded-[2rem] shadow-2xl cursor-pointer flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden group"
-          >
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-            <div className="flex items-center gap-4 z-10">
-              <div className="p-3.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl text-white shadow-lg shadow-blue-500/20 shrink-0">
-                <Globe className="w-8 h-8" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                    Solução B2B / Para Operadores
-                  </span>
-                  <span className="text-[10px] text-emerald-400 font-bold uppercase flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> API REST & IFrame
-                  </span>
-                </div>
-                <h3 className="text-lg md:text-xl font-black uppercase tracking-tight text-white group-hover:text-blue-300 transition-colors">
-                  API Pública iGaming CryptonBet
-                </h3>
-                <p className="text-xs text-slate-300 mt-1 max-w-xl">
-                  Obtenha chaves de API, simule webhooks de Seamless Wallet e integre nosso catálogo de jogos em sua plataforma com relatórios GGR em tempo real.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0 z-10 w-full md:w-auto justify-end border-t md:border-t-0 border-white/10 pt-3 md:pt-0">
-              <div className="flex items-center gap-1 bg-white/10 px-3 py-2 rounded-xl text-xs font-mono text-blue-200">
-                <Key className="w-3.5 h-3.5 text-blue-400" />
-                <span>Chaves API & Docs</span>
-              </div>
-              <button className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition flex items-center gap-1">
-                Acessar Painel <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </motion.div>
-        </div>
-
         {/* Fake Winners Ticker (Baiting) - Only if enabled in settings */}
         {JSON.parse(localStorage.getItem('skyhigh_settings') || '{}').fakeWinnersEnabled !== false && (
           <div className="px-4 md:px-8 mb-6">

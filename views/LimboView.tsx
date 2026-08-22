@@ -24,7 +24,7 @@ const LimboView: React.FC<LimboViewProps> = ({ balance, onUpdateBalance, onBack 
   const handlePlay = () => {
     if (balance < betAmount || betAmount < 5 || isSpinning) return;
 
-    soundService.playSpin();
+    soundService.playLimboLaunch();
     setIsSpinning(true);
     setWinStatus(null);
     onUpdateBalance(-betAmount);
@@ -42,10 +42,10 @@ const LimboView: React.FC<LimboViewProps> = ({ balance, onUpdateBalance, onBack 
         setWinStatus('WIN');
         const winAmount = betAmount * targetMultiplier;
         onUpdateBalance(winAmount);
-        soundService.playWin();
+        soundService.playLimboTargetHit();
       } else {
         setWinStatus('LOSS');
-        soundService.playLoss();
+        soundService.playLimboBust();
       }
 
       setLastResults(prev => [finalResult, ...prev].slice(0, 5));

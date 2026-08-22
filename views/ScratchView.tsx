@@ -64,7 +64,7 @@ const ScratchView: React.FC<ScratchViewProps> = ({ balance, onUpdateBalance, onB
     const newRevealed = [...revealed];
     newRevealed[index] = true;
     setRevealed(newRevealed);
-    soundService.playTick();
+    soundService.playScratchFoil();
 
     if (newRevealed.every(v => v)) {
       checkWin();
@@ -74,6 +74,7 @@ const ScratchView: React.FC<ScratchViewProps> = ({ balance, onUpdateBalance, onB
   const revealAll = () => {
     if (!isRevealing) return;
     setRevealed(new Array(9).fill(true));
+    soundService.playScratchFoil();
     checkWin();
   };
 
@@ -92,10 +93,10 @@ const ScratchView: React.FC<ScratchViewProps> = ({ balance, onUpdateBalance, onB
     if (totalWin > 0) {
       setWinAmount(totalWin);
       onUpdateBalance(totalWin);
-      soundService.playWin();
+      soundService.playSlotJackpot();
     } else {
       setWinAmount(0);
-      soundService.playLoss();
+      soundService.playDiceLoss();
     }
     
     setTimeout(() => setIsRevealing(false), 2000);

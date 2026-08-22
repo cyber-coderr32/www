@@ -36,7 +36,7 @@ const WheelView: React.FC<WheelViewProps> = ({ balance, onUpdateBalance, onBack 
 
     onUpdateBalance(-betAmount);
     setIsSpinning(true);
-    soundService.playSpin();
+    soundService.playWheelFlapperClick();
 
     const spinRotations = 5 + Math.floor(Math.random() * 5); // 5-10 spins
     const sectorIndex = Math.floor(Math.random() * SECTORS.length);
@@ -44,6 +44,18 @@ const WheelView: React.FC<WheelViewProps> = ({ balance, onUpdateBalance, onBack 
     const finalRotation = rotation + (spinRotations * 360) + (sectorIndex * sectorDegrees);
     
     setRotation(finalRotation);
+
+    // Flapper clicking sound that decelerates
+    let delay = 60;
+    let elapsed = 0;
+    const tick = () => {
+      if (elapsed >= 4700) return;
+      soundService.playWheelFlapperClick();
+      elapsed += delay;
+      delay = Math.min(450, delay * 1.07);
+      setTimeout(tick, delay);
+    };
+    setTimeout(tick, delay);
 
     setTimeout(() => {
       const actualIndex = (SECTORS.length - (Math.floor(finalRotation / sectorDegrees) % SECTORS.length)) % SECTORS.length;
@@ -53,9 +65,9 @@ const WheelView: React.FC<WheelViewProps> = ({ balance, onUpdateBalance, onBack 
 
       if (outcome.multiplier > 0) {
         onUpdateBalance(betAmount * outcome.multiplier);
-        soundService.playWin();
+        soundService.playWheelWin();
       } else {
-        soundService.playLoss();
+        soundService.playDiceLoss();
       }
 
       setHistory(prev => [outcome.multiplier, ...prev].slice(0, 10));

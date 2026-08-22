@@ -1310,61 +1310,112 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
     return () => unsubscribe();
   }, [currentUserId]);
 
+  // Image compression helper for stories and posts to prevent oversized base64 strings
+  const compressStoryImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (readerEvent) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1080;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(readerEvent.target?.result as string);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.8));
+        };
+        img.onerror = () => resolve(readerEvent.target?.result as string);
+        img.src = readerEvent.target?.result as string;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handlePublishStorySubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!storyText.trim() && !storyImage) return;
+    if (!storyText.trim() && !storyImage) {
+      showAlert('Adicione um texto ou imagem para publicar o Story.', 'error');
+      return;
+    }
 
     soundService.playUISelect();
     setIsPublishingStory(true);
 
-    const payload = {
+    const now = new Date();
+    const newStoryId = 'story_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const storyData = {
+      id: newStoryId,
       userId: currentUserId,
-      userName: currentUserName,
-      content: storyText,
-      background: storyBg,
-      image: storyImage,
+      name: currentUserName || 'Trader',
+      userName: currentUserName || 'Trader',
+      avatar: (currentUserName || 'T').charAt(0).toUpperCase(),
+      content: storyText.trim(),
+      background: storyImage ? null : storyBg,
+      image: storyImage || null,
       reactions: {},
       comments: [],
       views: [],
-      createdAt: serverTimestamp()
+      createdAt: now.toISOString()
     };
 
-    if (currentUserId === 'guest_user') {
+    // 1. Immediately save to local stories & update state for instant reactivity
+    try {
       const localStories = JSON.parse(localStorage.getItem('cryptonbet_local_stories') || '[]');
-      const newS = {
-        id: 'story_local_' + Date.now(),
-        name: currentUserName,
-        avatar: currentUserName.charAt(0),
-        content: storyText,
-        background: storyBg,
-        image: storyImage,
-        reactions: {},
-        comments: [],
-        createdAt: new Date().toISOString()
-      };
-      localStories.unshift(newS);
-      localStorage.setItem('cryptonbet_local_stories', JSON.stringify(localStories));
-      setStories([...localStories, ...defaultStories].filter(isStoryWithin24h));
-      setStoryText('');
-      setStoryImage(null);
-      setIsCreatingStory(false);
-      setIsPublishingStory(false);
-      showAlert('Story publicado com sucesso! (Válido por 24h)');
-      return;
+      const updatedLocal = [storyData, ...localStories.filter((s: any) => s.id !== newStoryId)];
+      localStorage.setItem('cryptonbet_local_stories', JSON.stringify(updatedLocal));
+      
+      setStories(prev => {
+        const withoutDup = prev.filter(s => s.id !== newStoryId);
+        return [storyData, ...withoutDup].filter(isStoryWithin24h);
+      });
+    } catch (e) {
+      console.warn("Local story save warning:", e);
     }
 
-    try {
-      await addDoc(collection(db, 'stories'), payload);
-      setStoryText('');
-      setStoryImage(null);
-      setIsCreatingStory(false);
-      showAlert('Story publicado com sucesso! (Válido por 24h)');
-    } catch (err) {
-      console.error("Error creating story:", err);
-      showAlert('Erro ao publicar story.', 'error');
-    } finally {
-      setIsPublishingStory(false);
+    // 2. Clear UI state
+    setStoryText('');
+    setStoryImage(null);
+    setIsCreatingStory(false);
+    soundService.playDepositSuccess();
+    showAlert('Story publicado com sucesso! (Válido por 24h)');
+
+    // 3. Sync with Firestore in background if online and not guest
+    if (currentUserId && currentUserId !== 'guest_user') {
+      try {
+        await addDoc(collection(db, 'stories'), {
+          userId: currentUserId,
+          userName: currentUserName || 'Trader',
+          content: storyData.content,
+          background: storyData.background,
+          image: storyData.image,
+          reactions: {},
+          comments: [],
+          views: [],
+          createdAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.warn("Firestore story sync failed, active in local storage:", err);
+      }
     }
+
+    setIsPublishingStory(false);
   };
 
   // Handler for story emoji reaction
@@ -1392,7 +1443,7 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
     setStories(prev => prev.map(s => s.id === storyId ? updatedStory : s));
 
     // Save reaction
-    if (storyId.startsWith('story_local_') || currentUserId === 'guest_user') {
+    if (storyId?.startsWith('story_local_') || currentUserId === 'guest_user') {
       const localStories = JSON.parse(localStorage.getItem('cryptonbet_local_stories') || '[]');
       const idx = localStories.findIndex((s: any) => s.id === storyId);
       if (idx !== -1) {
@@ -1431,7 +1482,7 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
     setStories(prev => prev.map(s => s.id === selectedStory.id ? updatedStory : s));
     setStoryCommentText('');
 
-    if (selectedStory.id.startsWith('story_local_') || currentUserId === 'guest_user') {
+    if (selectedStory.id?.startsWith('story_local_') || currentUserId === 'guest_user') {
       const localStories = JSON.parse(localStorage.getItem('cryptonbet_local_stories') || '[]');
       const idx = localStories.findIndex((s: any) => s.id === selectedStory.id);
       if (idx !== -1) {
@@ -3849,20 +3900,20 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
                           </>
                         )}
                         <div className="w-28 h-40 bg-white rounded-2xl border border-slate-200 relative overflow-hidden shadow-sm group-hover:shadow-md group-hover:border-slate-300 transition-all active:scale-95">
-                          {story.background ? (
-                            <div className={`w-full h-full bg-gradient-to-tr ${story.background} p-3 flex flex-col justify-between items-center text-center`}>
+                          {story.image ? (
+                            <img
+                              src={story.image}
+                              alt={story.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 filter brightness-75 group-hover:brightness-90"
+                            />
+                          ) : (
+                            <div className={`w-full h-full bg-gradient-to-tr ${story.background || 'from-purple-600 to-pink-500'} p-3 flex flex-col justify-between items-center text-center`}>
                               <div className="flex-1 flex items-center justify-center w-full">
                                 <span className="text-white font-black text-[9px] uppercase tracking-wide leading-snug break-words px-0.5 drop-shadow">
                                   {story.content}
                                 </span>
                               </div>
                             </div>
-                          ) : (
-                            <img
-                              src={story.image}
-                              alt={story.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 filter brightness-75 group-hover:brightness-90"
-                            />
                           )}
 
                           {/* Avatar badge with ring if multiple stories */}
@@ -6276,8 +6327,8 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
                         chatMessages.map((msg) => {
                           const isMe = msg.senderId === currentUserId;
 
-                          const isP2pTransfer = msg.content.startsWith('[P2P_TRANSFER:');
-                          const isChallenge = msg.content.startsWith('[CHALLENGE:');
+                          const isP2pTransfer = Boolean(msg.content?.startsWith('[P2P_TRANSFER:'));
+                          const isChallenge = Boolean(msg.content?.startsWith('[CHALLENGE:'));
 
                           if (isP2pTransfer) {
                             try {
@@ -6869,18 +6920,17 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              if (file.size > 5 * 1024 * 1024) {
-                                showAlert('Selecione uma imagem menor que 5MB.', 'error');
-                                return;
+                              try {
+                                const compressed = await compressStoryImage(file);
+                                if (compressed) {
+                                  setStoryImage(compressed);
+                                }
+                              } catch (err) {
+                                showAlert('Erro ao carregar a imagem. Tente outra foto.', 'error');
                               }
-                              const reader = new FileReader();
-                              reader.onload = () => {
-                                setStoryImage(reader.result as string);
-                              };
-                              reader.readAsDataURL(file);
                             }
                           }}
                         />

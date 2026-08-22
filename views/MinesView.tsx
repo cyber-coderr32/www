@@ -108,13 +108,14 @@ const MinesView: React.FC<MinesViewProps> = ({ balance, isDemo, onUpdateBalance,
       setGrid(newGrid);
       setGameState('ENDED');
       setWinStatus('LOSS');
-      soundService.playLoss();
+      soundService.playMinesExplosion();
     } else {
       const newGrid = [...grid];
       newGrid[index] = 'SAFE';
       setGrid(newGrid);
-      setRevealedCount(prev => prev + 1);
-      soundService.playTick();
+      const newStep = revealedCount + 1;
+      setRevealedCount(newStep);
+      soundService.playMinesGem(newStep);
     }
   };
 
@@ -123,7 +124,7 @@ const MinesView: React.FC<MinesViewProps> = ({ balance, isDemo, onUpdateBalance,
     onUpdateBalance(win);
     setGameState('ENDED');
     setWinStatus('WIN');
-    soundService.playWin();
+    soundService.playMinesCashout();
   };
 
   const currentMultiplier = calculateMultiplier(revealedCount);

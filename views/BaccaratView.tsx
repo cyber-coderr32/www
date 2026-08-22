@@ -37,9 +37,9 @@ const BaccaratView: React.FC<BaccaratViewProps> = ({ balance, onUpdateBalance, o
     setWinStatus(null);
     setPlayerHand([]);
     setBankerHand([]);
-    soundService.playCardShuffle();
+    soundService.playCardSlide();
 
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 600));
     
     // Draw initial hands
     const p1 = getRandomCard();
@@ -49,6 +49,7 @@ const BaccaratView: React.FC<BaccaratViewProps> = ({ balance, onUpdateBalance, o
 
     setPlayerHand([p1, p2]);
     setBankerHand([b1, b2]);
+    soundService.playCardSnap();
 
     let pScore = calculateScore([p1, p2]);
     let bScore = calculateScore([b1, b2]);
@@ -81,10 +82,10 @@ const BaccaratView: React.FC<BaccaratViewProps> = ({ balance, onUpdateBalance, o
       const multiplier = outcome === 'TIE' ? 9 : 2;
       onUpdateBalance(betAmount * multiplier);
       setWinStatus('WIN');
-      soundService.playWin();
+      soundService.playBlackjackNatural();
     } else {
       setWinStatus('LOSS');
-      soundService.playLoss();
+      soundService.playDiceLoss();
     }
 
     setIsSpinning(false);

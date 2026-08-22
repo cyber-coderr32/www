@@ -36,8 +36,12 @@ import {
   Store,
   BarChart3,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Bell
 } from 'lucide-react';
+import { AppNotification } from '../types';
+import { notificationService } from '../services/notificationService';
+import NotificationCenterModal from './NotificationCenterModal';
 
 export interface SearchResultItem {
   id: string;

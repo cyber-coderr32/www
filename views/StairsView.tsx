@@ -63,18 +63,19 @@ const StairsView: React.FC<StairsViewProps> = ({ balance, onUpdateBalance, onBac
       // Safe
       const nextMultiplier = calculateMultiplier(currentRow, minesCount);
       setMultiplier(nextMultiplier);
-      soundService.playWin();
+      soundService.playStairsStep(currentRow + 1);
       
       if (currentRow === ROWS - 1) {
         onUpdateBalance(betAmount * nextMultiplier);
         setGameState('WON');
+        soundService.playSlotJackpot();
       } else {
         setCurrentRow(prev => prev + 1);
       }
     } else {
       // Mine
       setGameState('LOST');
-      soundService.playLoss();
+      soundService.playTowerTrap();
     }
   };
 
@@ -82,7 +83,7 @@ const StairsView: React.FC<StairsViewProps> = ({ balance, onUpdateBalance, onBac
     if (gameState !== 'PLAYING' || currentRow === 0) return;
     onUpdateBalance(betAmount * multiplier);
     setGameState('WON');
-    soundService.playWin();
+    soundService.playMinesCashout();
   };
 
   return (

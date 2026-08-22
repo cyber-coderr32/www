@@ -43,7 +43,7 @@ const PokerView: React.FC<PokerViewProps> = ({ balance, onUpdateBalance, onBack 
       setHeld(new Array(5).fill(false));
       setGameState('DEALT');
       setWinMessage(null);
-      soundService.playCardShuffle();
+      soundService.playCardSlide();
     }
   };
 
@@ -53,7 +53,7 @@ const PokerView: React.FC<PokerViewProps> = ({ balance, onUpdateBalance, onBack 
     const newHand = hand.map((card, i) => held[i] ? card : getRandomCard());
     setHand(newHand);
     setGameState('FINISHED');
-    soundService.playCardShuffle();
+    soundService.playCardSlide();
 
     // Basic Hand Recognition (Simplified)
     checkHand(newHand);
@@ -78,11 +78,11 @@ const PokerView: React.FC<PokerViewProps> = ({ balance, onUpdateBalance, onBack 
       setWinAmount(betAmount * multiplier);
       onUpdateBalance(betAmount * multiplier);
       setWinMessage(message);
-      soundService.playWin();
+      soundService.playSlotJackpot();
     } else {
       setWinAmount(0);
       setWinMessage('TENTE NOVAMENTE');
-      soundService.playLoss();
+      soundService.playDiceLoss();
     }
   };
 

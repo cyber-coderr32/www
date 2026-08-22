@@ -58,9 +58,9 @@ const LotteryView: React.FC<LotteryViewProps> = ({ balance, onUpdateBalance, onB
       const prize = betAmount * multiplier;
       setWinMessage({ text: msg, amount: prize });
       onUpdateBalance(prize);
-      soundService.playWin();
+      soundService.playSlotJackpot();
     } else {
-      soundService.playCrash();
+      soundService.playDiceLoss();
     }
     
     setDrawing(false);
@@ -78,7 +78,7 @@ const LotteryView: React.FC<LotteryViewProps> = ({ balance, onUpdateBalance, onB
     setWinMessage(null);
     setDrawResult([null, null, null]);
     onUpdateBalance(-betAmount);
-    soundService.playTakeoff();
+    soundService.playSpin();
 
     // Sorteio de 3 números únicos de 0 a 9
     const available = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -96,7 +96,11 @@ const LotteryView: React.FC<LotteryViewProps> = ({ balance, onUpdateBalance, onB
           next[i] = finalResult[i];
           return next;
         });
-        soundService.playTick();
+        if (selectedNumbers.includes(finalResult[i])) {
+          soundService.playKenoMatch();
+        } else {
+          soundService.playKenoBallPop(i + 1);
+        }
         
         if (i === 2) {
           setTimeout(() => finishGame(finalResult), 600);

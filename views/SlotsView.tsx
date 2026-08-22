@@ -74,7 +74,7 @@ const SlotsView: React.FC<SlotsViewProps> = ({ balance, onUpdateBalance, onBack 
     setWinLines([]);
     setLastWin(0);
     onUpdateBalance(-bet);
-    soundService.playChip();
+    soundService.playSlotLever();
     setSpinning([true, true, true, true, true]);
     setStopping([false, false, false, false, false]);
 
@@ -85,7 +85,7 @@ const SlotsView: React.FC<SlotsViewProps> = ({ balance, onUpdateBalance, onBack 
         setStopping(prev => { const n = [...prev]; n[i] = true; return n; });
         setTimeout(() => {
           setSpinning(prev => { const n = [...prev]; n[i] = false; return n; });
-          soundService.playUISelect();
+          soundService.playSlotReelStop(i);
           if (i === 4) {
             const { totalWin, activeWinLines } = checkWins(newGrid);
             setGrid(newGrid);
@@ -93,9 +93,10 @@ const SlotsView: React.FC<SlotsViewProps> = ({ balance, onUpdateBalance, onBack 
               setLastWin(totalWin);
               setWinLines(activeWinLines);
               onUpdateBalance(totalWin);
-              soundService.playJackpot();
+              soundService.playSlotPayline();
+              setTimeout(() => soundService.playSlotJackpot(), 200);
             } else {
-              soundService.playTick();
+              soundService.playDiceLoss();
             }
           }
         }, 150); 

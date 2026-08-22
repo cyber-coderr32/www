@@ -226,6 +226,24 @@ export interface PaymentMethod {
   qrCodeUrl?: string;
 }
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'INFO' | 'SUCCESS' | 'WARNING' | 'PROMO' | 'ALERT' | 'BONUS' | 'FINANCE';
+  target: 'ALL' | string; // 'ALL' or specific user ID
+  targetUserId?: string;
+  targetUserName?: string;
+  targetUserEmail?: string;
+  senderName?: string;
+  createdAt: string;
+  readBy?: string[];
+  actionUrl?: string;
+  actionText?: string;
+  actionView?: ViewState;
+  priority?: 'NORMAL' | 'HIGH' | 'URGENT';
+}
+
 export interface GlobalSettings {
   siteName: string;
   maintenanceMode: boolean;

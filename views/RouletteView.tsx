@@ -41,7 +41,7 @@ const RouletteView: React.FC<RouletteViewProps> = ({ balance, isDemo, onUpdateBa
     setSpinning(true);
     setLastResult(null);
     onUpdateBalance(-betAmount);
-    soundService.playTakeoff();
+    soundService.playRouletteSpin();
 
     // Lógica de sorteio
     const winningNumber = WHEEL_ORDER[Math.floor(Math.random() * WHEEL_ORDER.length)];
@@ -59,20 +59,22 @@ const RouletteView: React.FC<RouletteViewProps> = ({ balance, isDemo, onUpdateBa
     // Simulação do pino a bater nas divisórias
     const tickInterval = setInterval(() => {
       setIsPinTicking(true);
+      soundService.playRouletteBallClick();
       setTimeout(() => setIsPinTicking(false), 50);
     }, 120);
 
     setTimeout(() => {
       clearInterval(tickInterval);
+      soundService.playRoulettePocketDrop();
       setLastResult(winningNumber);
       setSpinning(false);
       
       if (winningNumber === targetBetNum) {
         const win = betAmount * 11; // 12 números, prêmio de 11x
         onUpdateBalance(win);
-        soundService.playWin();
+        soundService.playRouletteWin();
       } else {
-        soundService.playCrash();
+        soundService.playDiceLoss();
       }
     }, 5000);
   };

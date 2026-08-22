@@ -82,7 +82,7 @@ const PrivacyView: React.FC<PrivacyViewProps> = ({ onBack }) => {
               4. Partilha de Dados com Terceiros
             </h2>
             <p>
-              <strong>Nunca vendemos, alugamos ou comercializamos os seus dados pessoais a terceiros.</strong> A partilha de informações ocorre estritamente quando exigida por lei ou com processadores de pagamento autorizados (como gateways Plisio e bancos parceiros) para a execução direta das suas transações.
+              <strong>Nunca vendemos, alugamos ou comercializamos os seus dados pessoais a terceiros.</strong> A partilha de informações ocorre estritamente quando exigida por lei ou com processadores de pagamento autorizados (como gateways Blockchain e parceiros bancários) para a execução direta das suas transações.
             </p>
           </section>
 

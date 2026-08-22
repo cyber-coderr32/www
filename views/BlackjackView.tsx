@@ -59,17 +59,18 @@ const BlackjackView: React.FC<BlackjackViewProps> = ({ balance, isDemo, onUpdate
     setPlayerHand([p1, p2]);
     setDealerHand([d1]);
     setStatus('PLAYING');
-    soundService.playCardShuffle();
+    soundService.playCardSlide();
+    setTimeout(() => soundService.playCardSnap(), 150);
   };
 
   const hit = () => {
     const newCard = drawCard();
     const newHand = [...playerHand, newCard];
     setPlayerHand(newHand);
-    soundService.playCardShuffle();
+    soundService.playCardSnap();
     if (calculateScore(newHand) > 21) {
       setStatus('DEALER_WIN');
-      soundService.playLoss();
+      soundService.playDiceLoss();
     }
   };
 
@@ -79,6 +80,7 @@ const BlackjackView: React.FC<BlackjackViewProps> = ({ balance, isDemo, onUpdate
       currentDealerHand.push(drawCard());
     }
     setDealerHand(currentDealerHand);
+    soundService.playCardSlide();
     
     const pScore = calculateScore(playerHand);
     const dScore = calculateScore(currentDealerHand);
@@ -86,13 +88,18 @@ const BlackjackView: React.FC<BlackjackViewProps> = ({ balance, isDemo, onUpdate
     if (dScore > 21 || pScore > dScore) {
       setStatus('PLAYER_WIN');
       onUpdateBalance(bet * 2);
-      soundService.playWin();
+      if (pScore === 21) {
+        soundService.playBlackjackNatural();
+      } else {
+        soundService.playWin();
+      }
     } else if (dScore > pScore) {
       setStatus('DEALER_WIN');
-      soundService.playLoss();
+      soundService.playDiceLoss();
     } else {
       setStatus('PUSH');
       onUpdateBalance(bet);
+      soundService.playUISelect();
     }
   };
 

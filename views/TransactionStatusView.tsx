@@ -72,12 +72,12 @@ export const TransactionStatusView: React.FC<TransactionStatusViewProps> = ({
       if (userTransactions.length === 0) {
         const demoTrans: TransactionRequest[] = [
           {
-            id: 'DEP_PLISIO_' + Math.random().toString(36).substring(2, 8).toUpperCase(),
+            id: 'DEP_CRYPTO_' + Math.random().toString(36).substring(2, 8).toUpperCase(),
             userId: user.id,
             userName: user.name,
             type: 'DEPOSIT',
             amount: 50.00,
-            method: 'Plisio Crypto (USDT_TRX)',
+            method: 'Criptomoedas (USDT_TRX)',
             status: 'APPROVED',
             timestamp: new Date(Date.now() - 3600000 * 2).toLocaleString('pt-PT'),
             accountDetails: 'TxHash: 0x8f4c2e...b3a1',
@@ -85,12 +85,12 @@ export const TransactionStatusView: React.FC<TransactionStatusViewProps> = ({
             isAutomaticPayout: true
           },
           {
-            id: 'OUT_PLISIO_' + Math.random().toString(36).substring(2, 8).toUpperCase(),
+            id: 'OUT_CRYPTO_' + Math.random().toString(36).substring(2, 8).toUpperCase(),
             userId: user.id,
             userName: user.name,
             type: 'WITHDRAW',
             amount: 25.00,
-            method: 'Plisio Crypto (USDT_TON)',
+            method: 'Criptomoedas (USDT_TON)',
             status: 'PENDING',
             timestamp: new Date(Date.now() - 600000).toLocaleString('pt-PT'),
             accountDetails: 'Carteira TON: UQD_ton_wallet_destination_99',
@@ -392,7 +392,7 @@ export const TransactionStatusView: React.FC<TransactionStatusViewProps> = ({
               ~1 a 3 min
             </div>
             <div className="text-[9px] text-slate-500 font-bold uppercase mt-1">
-              Plisio Crypto & PIX Automático
+              Cripto Multi-Chain & PIX Automático
             </div>
           </div>
         </div>

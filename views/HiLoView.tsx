@@ -61,7 +61,7 @@ const HiLoView: React.FC<HiLoViewProps> = ({ balance, onUpdateBalance, onBack })
     if (!gameActive || isSpinning) return;
     
     setIsSpinning(true);
-    soundService.playTick();
+    soundService.playHiLoGuess(guess === 'HI');
     
     const next = getRandomCard();
     const nextS = getRandomSuit();
@@ -83,11 +83,11 @@ const HiLoView: React.FC<HiLoViewProps> = ({ balance, onUpdateBalance, onBack })
         const diff = guess === 'HI' ? (15 - currentVal) : (currentVal - 1);
         const addedMult = 1.1 + (1.5 * (1 - (diff / 13)));
         setMultiplier(prev => prev * addedMult);
-        soundService.playWin();
+        soundService.playCoinStreak(history.length + 1);
       } else {
         setWinStatus('LOSS');
         setGameActive(false);
-        soundService.playLoss();
+        soundService.playDiceLoss();
       }
 
       setHistory(prev => [{val: currentCard, suit: currentSuit}, ...prev].slice(0, 10));
@@ -105,7 +105,7 @@ const HiLoView: React.FC<HiLoViewProps> = ({ balance, onUpdateBalance, onBack })
     onUpdateBalance(win);
     setGameActive(false);
     setWinStatus(null);
-    soundService.playWin();
+    soundService.playCoinCashout();
   };
 
   return (

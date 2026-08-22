@@ -4,7 +4,7 @@ import { ViewState, UserAccount, GlobalSettings } from './types';
 import { soundService } from './services/soundService';
 import { authService } from './services/authService';
 import { userService } from './services/userService';
-import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
+import { doc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from './services/firebase';
 import LoginView from './views/LoginView';
 import RegisterView from './views/RegisterView';
@@ -218,7 +218,7 @@ const App: React.FC = () => {
     totalVolume: 0,
     totalPaid: 0,
     paymentMethods: [
-      { id: 'plisio_crypto', name: '⚡ Cripto Automático (Plisio)', type: 'CRYPTO', account: 'Plisio Crypto Gateway', icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 5, maxWithdraw: 50000, cryptoType: 'USDT', cryptoNetwork: 'Multi-Chain (TRC20, BEP20, BTC, ETH, SOL)', details: 'Fatura instantânea com QR Code e crédito automático em Blockchain' },
+      { id: 'plisio_crypto', name: '⚡ Cripto Automático (Blockchain)', type: 'CRYPTO', account: 'CryptonBet Crypto Gateway', icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 5, maxWithdraw: 50000, cryptoType: 'USDT', cryptoNetwork: 'Multi-Chain (TRC20, BEP20, BTC, ETH, SOL)', details: 'Fatura instantânea com QR Code e crédito automático em Blockchain' },
       { id: 'usdt_trc20', name: 'USDT (TRC-20 Manual)', type: 'CRYPTO', account: 'TYd8S1kX9aPz2mQqR4vW7tL0uJ3bC5nE', icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 10, maxWithdraw: 50000, cryptoType: 'USDT', cryptoNetwork: 'TRC20', details: 'Rede TRON (TRC20) • Depósito manual com comprovativo' },
       { id: 'pix_cakto', name: 'PIX Automático (Brasil)', type: 'PIX', account: 'pix@cryptonbet.com', icon: 'https://images.unsplash.com/photo-1613243555988-441166d4d6fd?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 5, maxWithdraw: 50000, details: 'Depósito instantâneo via PIX com aprovação em tempo real' },
       { id: 'unitel_money', name: 'Unitel Money', type: 'UNITEL_MONEY', account: '923000000', icon: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=100&q=80', isActive: true, minDeposit: 500, maxWithdraw: 500000, entityNumber: '00123', referenceNumber: '923000000', details: 'Pagamento via Unitel Money (Entidade e Referência)' },
@@ -262,15 +262,21 @@ const App: React.FC = () => {
     const unsubscribe = authService.onAuthChange(async (fbUser) => {
       setIsLoadingAuth(true);
       if (fbUser) {
+        const userUid = fbUser.uid || fbUser.id || (fbUser.email ? 'local_' + fbUser.email.replace(/[^a-zA-Z0-9]/g, '_') : null);
+        if (!userUid) {
+          setIsLoadingAuth(false);
+          return;
+        }
+
         let profile = null;
         try {
           // Try to fetch the user profile from Firestore or local fallback
-          profile = await userService.getUserProfile(fbUser.uid) as any;
+          profile = await userService.getUserProfile(userUid) as any;
           
           // If profile doesn't exist yet (e.g., registration / Google creation in progress), wait and retry
           if (!profile) {
             await new Promise(resolve => setTimeout(resolve, 1200));
-            profile = await userService.getUserProfile(fbUser.uid) as any;
+            profile = await userService.getUserProfile(userUid) as any;
           }
         } catch (e) {
           console.error("Failed to retrieve user profile from database, using fallback:", e);
@@ -285,8 +291,8 @@ const App: React.FC = () => {
             joinedAt: new Date().toISOString()
           };
           try {
-            await userService.createUserProfile(fbUser.uid, defaultProfile);
-            profile = await userService.getUserProfile(fbUser.uid) as any;
+            await userService.createUserProfile(userUid, defaultProfile);
+            profile = await userService.getUserProfile(userUid) as any;
           } catch (err) {
             console.error("Error creating default profile in auth change listener:", err);
           }
@@ -295,7 +301,7 @@ const App: React.FC = () => {
         if (profile) {
           const isAdminUser = profile.role === 'ADMIN' || fbUser.email === 'alfaajmc@atend.com' || fbUser.email === 'alfaajmc@gmail.com' || fbUser.email === 'admin@cryptonbet.ao';
           const userAccount: UserAccount = {
-            id: fbUser.uid,
+            id: userUid,
             name: profile.displayName || 'Jogador',
             email: fbUser.email || '',
             phone: profile.phone || '',
@@ -318,7 +324,7 @@ const App: React.FC = () => {
           // Robust fallback with zero balance until real deposit is made
           const isAdminUser = fbUser.email === 'alfaajmc@atend.com' || fbUser.email === 'alfaajmc@gmail.com' || fbUser.email === 'admin@cryptonbet.ao';
           const fallbackAccount: UserAccount = {
-            id: fbUser.uid,
+            id: userUid,
             name: fbUser.displayName || 'Jogador Conectado',
             email: fbUser.email || '',
             phone: '',
@@ -350,7 +356,7 @@ const App: React.FC = () => {
   // Real-time synchronization of user balance from Firestore (for Plisio, PIX, and manual deposit approvals)
   useEffect(() => {
     const userId = user?.id;
-    if (!userId || userId.startsWith('local_') || userId === 'guest_user') return;
+    if (!userId || typeof userId !== 'string' || userId.startsWith('local_') || userId === 'guest_user') return;
 
     const unsubUser = onSnapshot(doc(db, 'users', userId), (docSnap) => {
       if (docSnap.exists()) {
@@ -379,14 +385,14 @@ const App: React.FC = () => {
           const parsed = JSON.parse(saved);
           let mutated = false;
 
-          // Ensure Plisio Crypto is always registered and available
+          // Ensure Blockchain Crypto is always registered and available
           if (!parsed.paymentMethods?.some((m: any) => m.id === 'plisio_crypto')) {
             parsed.paymentMethods = [
               { 
                 id: 'plisio_crypto', 
-                name: '⚡ Cripto Automático (Plisio)', 
+                name: '⚡ Cripto Automático (Blockchain)', 
                 type: 'CRYPTO', 
-                account: 'Plisio Crypto Gateway', 
+                account: 'CryptonBet Crypto Gateway', 
                 icon: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=100&q=80', 
                 isActive: true, 
                 minDeposit: 5, 
@@ -398,6 +404,19 @@ const App: React.FC = () => {
               ...(parsed.paymentMethods || [])
             ];
             mutated = true;
+          } else if (parsed.paymentMethods) {
+            parsed.paymentMethods = parsed.paymentMethods.map((m: any) => {
+              if (m.id === 'plisio_crypto') {
+                if (m.name?.includes('Plisio') || m.account?.includes('Plisio')) mutated = true;
+                return {
+                  ...m,
+                  name: '⚡ Cripto Automático (Blockchain)',
+                  account: 'CryptonBet Crypto Gateway',
+                  details: 'Fatura instantânea com QR Code e crédito automático na Blockchain'
+                };
+              }
+              return m;
+            });
           }
 
           if (!parsed.paymentMethods?.some((m: any) => m.type === 'PIX' || m.id === 'pix_cakto')) {
@@ -525,7 +544,8 @@ const App: React.FC = () => {
       }
       const fbUser = await authService.signUpWithEmail(trimmedEmail, pass);
       if (fbUser) {
-        await userService.createUserProfile(fbUser.uid, {
+        const uid = fbUser.uid || (fbUser as any).id || ('local_' + trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_'));
+        await userService.createUserProfile(uid, {
           displayName: name,
           email: trimmedEmail,
           phone: phone,
@@ -553,13 +573,16 @@ const App: React.FC = () => {
       setIsLoadingAuth(true);
       const fbUser = await authService.signInWithGoogle();
       if (fbUser) {
-        let profile = await userService.getUserProfile(fbUser.uid);
-        if (!profile) {
-          await userService.createUserProfile(fbUser.uid, {
-            displayName: fbUser.displayName || 'Jogador Google',
-            email: fbUser.email || '',
-            role: 'USER'
-          });
+        const uid = fbUser.uid || (fbUser as any).id;
+        if (uid) {
+          let profile = await userService.getUserProfile(uid);
+          if (!profile) {
+            await userService.createUserProfile(uid, {
+              displayName: fbUser.displayName || 'Jogador Google',
+              email: fbUser.email || '',
+              role: 'USER'
+            });
+          }
         }
       }
     } catch (e: any) {
@@ -650,22 +673,53 @@ const App: React.FC = () => {
   };
 
   const updateBalance = (amount: number) => {
-    const currentSettings = JSON.parse(localStorage.getItem('skyhigh_settings') || '{}');
-    if (amount < 0) {
-      currentSettings.totalVolume += Math.abs(amount);
-    } else {
-      currentSettings.totalPaid += amount;
-    }
-    localStorage.setItem('skyhigh_settings', JSON.stringify(currentSettings));
+    try {
+      const currentSettings = JSON.parse(localStorage.getItem('skyhigh_settings') || '{}');
+      if (amount < 0) {
+        currentSettings.totalVolume = (currentSettings.totalVolume || 0) + Math.abs(amount);
+      } else {
+        currentSettings.totalPaid = (currentSettings.totalPaid || 0) + amount;
+      }
+      localStorage.setItem('skyhigh_settings', JSON.stringify(currentSettings));
+    } catch (e) {}
 
     if (isDemo) {
-      setDemoBalance(prev => Math.max(0, prev + amount));
+      setDemoBalance(prev => Math.max(0, Number((prev + amount).toFixed(2))));
     } else {
-      const nextBal = Math.max(0, realBalance + amount);
-      setRealBalance(nextBal);
-      if (user?.id && !user.id.startsWith('local_') && user.id !== 'guest_user') {
-        userService.updateBalance(user.id, nextBal).catch(() => {});
-      }
+      setRealBalance(prev => {
+        const nextBal = Math.max(0, Number((prev + amount).toFixed(2)));
+        
+        // 1. Instantly update user in state and local storage
+        setUser(prevUser => {
+          if (!prevUser) return prevUser;
+          const updated = { ...prevUser, balance: nextBal };
+          try {
+            localStorage.setItem('skyhigh_user', JSON.stringify(updated));
+            localStorage.setItem('cryptonbet_local_user_session', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+
+        // 2. Sync in local users registry
+        try {
+          const localUsers = JSON.parse(localStorage.getItem('cryptonbet_local_users_db') || '[]');
+          if (user?.id) {
+            const idx = localUsers.findIndex((u: any) => u.uid === user.id || u.id === user.id);
+            if (idx >= 0) {
+              localUsers[idx].balance = nextBal;
+              localStorage.setItem('cryptonbet_local_users_db', JSON.stringify(localUsers));
+            }
+          }
+        } catch (e) {}
+
+        // 3. Persist to Firestore with setDoc merge
+        if (user?.id && !user.id.startsWith('local_') && user.id !== 'guest_user') {
+          userService.updateBalance(user.id, nextBal).catch(() => {});
+          setDoc(doc(db, 'users', user.id), { balance: nextBal }, { merge: true }).catch(() => {});
+        }
+
+        return nextBal;
+      });
     }
   };
 

@@ -52,12 +52,13 @@ const DiceView: React.FC<DiceViewProps> = ({ balance, onUpdateBalance, onBack })
     // Limpa o resultado anterior para evitar validação visual errada antes do novo roll
     setResult(null);
     setSelectedFace(face);
+    soundService.playUISelect();
   };
 
   const roll = () => {
     if (balance < bet || bet < 5 || rolling || selectedFace === null) {
       if (selectedFace === null && !rolling) {
-        soundService.playCrash();
+        soundService.playUISelect();
       }
       return;
     }
@@ -65,13 +66,13 @@ const DiceView: React.FC<DiceViewProps> = ({ balance, onUpdateBalance, onBack })
     setRolling(true);
     setResult(null); // Garante que o resultado visual é limpo ao iniciar
     onUpdateBalance(-bet);
-    soundService.playTick();
+    soundService.playDiceShake();
+    soundService.playDiceRoll();
 
     let currentTemp = 1;
     const interval = setInterval(() => {
       currentTemp = Math.floor(Math.random() * 6) + 1;
       setResult(currentTemp);
-      soundService.playTick();
     }, 100);
 
     setTimeout(() => {
@@ -83,9 +84,9 @@ const DiceView: React.FC<DiceViewProps> = ({ balance, onUpdateBalance, onBack })
       if (finalResult === selectedFace) {
         const win = bet * 6;
         onUpdateBalance(win);
-        soundService.playWin();
+        soundService.playDiceWin();
       } else {
-        soundService.playCrash();
+        soundService.playDiceLoss();
       }
     }, 1500);
   };

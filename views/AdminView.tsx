@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { UserAccount, TransactionRequest, GlobalSettings, PaymentMethod, P2POffer } from '../types';
 import { soundService } from '../services/soundService';
 import { caktoService } from '../services/caktoService';
@@ -35,7 +35,20 @@ import {
   LogOut,
   Radio,
   FileText,
-  AlertCircle
+  AlertCircle,
+  Filter,
+  Calendar,
+  Clock,
+  ArrowUpDown,
+  Check,
+  X,
+  Copy,
+  ExternalLink,
+  Inbox,
+  RotateCcw,
+  SlidersHorizontal,
+  Layers,
+  CheckCheck
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -43,6 +56,48 @@ interface AdminViewProps {
 }
 
 type AdminTab = 'DASHBOARD' | 'USERS' | 'FINANCE' | 'PAYMENTS' | 'ENGINE' | 'P2P_MARKET';
+
+type TransTypeFilter = 'ALL' | 'DEPOSIT' | 'WITHDRAW';
+type TransStatusFilter = 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED';
+type TransDateFilter = 'ALL' | 'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS';
+type TransSortOption = 'RECENT_FIRST' | 'OLDEST_FIRST' | 'HIGHEST_AMOUNT' | 'LOWEST_AMOUNT';
+
+// Helper to safely parse various date string representations
+const parseTransactionDate = (tsStr?: string): Date | null => {
+  if (!tsStr) return null;
+  if (/^\d+$/.test(tsStr)) {
+    return new Date(Number(tsStr));
+  }
+  const ptMatch = tsStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (ptMatch) {
+    const day = parseInt(ptMatch[1], 10);
+    const month = parseInt(ptMatch[2], 10) - 1;
+    const year = parseInt(ptMatch[3], 10);
+    const hour = ptMatch[4] ? parseInt(ptMatch[4], 10) : 0;
+    const min = ptMatch[5] ? parseInt(ptMatch[5], 10) : 0;
+    const sec = ptMatch[6] ? parseInt(ptMatch[6], 10) : 0;
+    return new Date(year, month, day, hour, min, sec);
+  }
+  const parsed = Date.parse(tsStr);
+  if (!isNaN(parsed)) {
+    return new Date(parsed);
+  }
+  return null;
+};
+
+// Helper for relative time description in Portuguese
+const getRelativeTime = (tsStr?: string): string => {
+  const date = parseTransactionDate(tsStr);
+  if (!date) return tsStr || 'Recente';
+  const now = new Date();
+  const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (diffSec < 60) return '⚡ Agora mesmo';
+  if (diffSec < 3600) return `Há ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) return `Há ${Math.floor(diffSec / 3600)}h`;
+  if (diffSec < 172800) return 'Ontem';
+  const days = Math.floor(diffSec / 86400);
+  return `Há ${days} ${days === 1 ? 'dia' : 'dias'}`;
+};
 
 const LOCAL_USERS_KEY = 'skyhigh_users';
 const LOCAL_TRANS_KEY = 'skyhigh_transactions';
@@ -135,6 +190,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
   const [editingMethod, setEditingMethod] = useState<Partial<PaymentMethod> | null>(null);
   const [searchUser, setSearchUser] = useState('');
   const [searchTrans, setSearchTrans] = useState('');
+  const [transTypeFilter, setTransTypeFilter] = useState<TransTypeFilter>('ALL');
+  const [transStatusFilter, setTransStatusFilter] = useState<TransStatusFilter>('ALL');
+  const [transDateFilter, setTransDateFilter] = useState<TransDateFilter>('ALL');
+  const [transMethodFilter, setTransMethodFilter] = useState<string>('ALL');
+  const [transSort, setTransSort] = useState<TransSortOption>('RECENT_FIRST');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
   const [selectedUserForCredit, setSelectedUserForCredit] = useState<UserAccount | null>(null);
   const [creditAmount, setCreditAmount] = useState<string>('');
   const [creditReason, setCreditReason] = useState<string>('Ajuste Administrativo');
@@ -651,11 +713,108 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
     { id: 'ENGINE' as AdminTab, label: 'Motor & Algoritmos (RTP)', icon: <Cpu className="w-5 h-5 text-red-400" /> },
   ];
 
+  const handleCopyToClipboard = (text: string, label: string) => {
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedField(label);
+      soundService.playTick();
+      showNotification(`📋 ${label} copiado!`);
+      setTimeout(() => setCopiedField(null), 2500);
+    } catch (e) {
+      showNotification(`Texto: ${text}`);
+    }
+  };
+
   const pendingCount = transactions.filter(t => t.status === 'PENDING').length;
+  const pendingDepositsCount = transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'PENDING').length;
+  const pendingWithdrawalsCount = transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'PENDING').length;
+
   const approvedDeposits = transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'APPROVED').reduce((acc, t) => acc + t.amount, 0);
   const approvedWithdrawals = transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'APPROVED').reduce((acc, t) => acc + t.amount, 0);
   const totalUsersCount = users.length;
   const totalBannedCount = users.filter(u => u.isBanned).length;
+
+  const todayTransactionsCount = transactions.filter(t => {
+    const d = parseTransactionDate(t.timestamp);
+    if (!d) return false;
+    return (Date.now() - d.getTime()) <= 24 * 60 * 60 * 1000;
+  }).length;
+
+  // Filtered & Sorted Transactions for Finance Tab and Telemetry
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      // 1. Type
+      if (transTypeFilter !== 'ALL' && t.type !== transTypeFilter) return false;
+
+      // 2. Status
+      if (transStatusFilter !== 'ALL' && t.status !== transStatusFilter) return false;
+
+      // 3. Method
+      if (transMethodFilter !== 'ALL') {
+        const m = (t.method || '').toLowerCase();
+        if (transMethodFilter === 'CRYPTO' && !m.includes('usdt') && !m.includes('cripto') && !m.includes('plisio') && !m.includes('trc') && !m.includes('ton') && !m.includes('btc')) return false;
+        if (transMethodFilter === 'PIX' && !m.includes('pix') && !m.includes('cakto')) return false;
+        if (transMethodFilter === 'BANK' && !m.includes('multicaixa') && !m.includes('express') && !m.includes('banc') && !m.includes('bai') && !m.includes('bfa')) return false;
+        if (transMethodFilter === 'UNITEL' && !m.includes('unitel')) return false;
+        if (transMethodFilter === 'ADMIN' && !m.includes('admin') && !m.includes('ajuste')) return false;
+      }
+
+      // 4. Date filter
+      if (transDateFilter !== 'ALL') {
+        const date = parseTransactionDate(t.timestamp);
+        if (date) {
+          const now = new Date();
+          const diffMs = now.getTime() - date.getTime();
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          if (transDateFilter === 'TODAY' && diffDays > 1) return false;
+          if (transDateFilter === 'LAST_7_DAYS' && diffDays > 7) return false;
+          if (transDateFilter === 'LAST_30_DAYS' && diffDays > 30) return false;
+        }
+      }
+
+      // 5. Text search query
+      if (searchTrans.trim()) {
+        const q = searchTrans.toLowerCase().trim();
+        const matchName = (t.userName || '').toLowerCase().includes(q);
+        const matchUserId = (t.userId || '').toLowerCase().includes(q);
+        const matchId = (t.id || '').toLowerCase().includes(q);
+        const matchMethod = (t.method || '').toLowerCase().includes(q);
+        const matchDetails = (t.accountDetails || '').toLowerCase().includes(q);
+        const matchTx = (t.txHash || '').toLowerCase().includes(q);
+        const matchAmount = String(t.amount).includes(q);
+        if (!matchName && !matchUserId && !matchId && !matchMethod && !matchDetails && !matchTx && !matchAmount) {
+          return false;
+        }
+      }
+
+      return true;
+    }).sort((a, b) => {
+      if (transSort === 'HIGHEST_AMOUNT') return b.amount - a.amount;
+      if (transSort === 'LOWEST_AMOUNT') return a.amount - b.amount;
+      const dateA = parseTransactionDate(a.timestamp)?.getTime() || 0;
+      const dateB = parseTransactionDate(b.timestamp)?.getTime() || 0;
+      if (transSort === 'OLDEST_FIRST') return dateA - dateB;
+      return dateB - dateA; // RECENT_FIRST is default
+    });
+  }, [transactions, transTypeFilter, transStatusFilter, transDateFilter, transMethodFilter, transSort, searchTrans]);
+
+  const filteredTotalVolume = filteredTransactions.reduce((acc, t) => acc + t.amount, 0);
+  const filteredDepositsVolume = filteredTransactions.filter(t => t.type === 'DEPOSIT').reduce((acc, t) => acc + t.amount, 0);
+  const filteredWithdrawalsVolume = filteredTransactions.filter(t => t.type === 'WITHDRAW').reduce((acc, t) => acc + t.amount, 0);
+  const filteredPendingCount = filteredTransactions.filter(t => t.status === 'PENDING').length;
+
+  const isFilterActive = transTypeFilter !== 'ALL' || transStatusFilter !== 'ALL' || transDateFilter !== 'ALL' || transMethodFilter !== 'ALL' || searchTrans.trim() !== '' || transSort !== 'RECENT_FIRST';
+
+  const clearAllTransFilters = () => {
+    setTransTypeFilter('ALL');
+    setTransStatusFilter('ALL');
+    setTransDateFilter('ALL');
+    setTransMethodFilter('ALL');
+    setTransSort('RECENT_FIRST');
+    setSearchTrans('');
+    soundService.playUISelect();
+    showNotification('Filtros limpos com sucesso!');
+  };
 
   return (
     <div className="h-full flex bg-[#03060a] text-slate-100 font-sans overflow-hidden relative selection:bg-[#049444] selection:text-white">
@@ -976,6 +1135,190 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
 
               </div>
 
+              {/* RECENT DEPOSITS & WITHDRAWALS TELEMETRY MONITOR (DASHBOARD) */}
+              <div className="bg-[#090e17] p-6 rounded-3xl border border-white/10 shadow-xl space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+                  <div>
+                    <h3 className="text-sm font-black uppercase text-white flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span>Monitor de Pedidos Recentes (Depósitos & Saques)</span>
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                      Visualização rápida dos últimos fluxos com acesso instantâneo aos filtros
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {pendingCount > 0 && (
+                      <button
+                        onClick={() => {
+                          setTransTypeFilter('ALL');
+                          setTransStatusFilter('PENDING');
+                          setActiveTab('FINANCE');
+                          soundService.playUISelect();
+                        }}
+                        className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 cursor-pointer animate-pulse"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-amber-400" />
+                        <span>{pendingCount} Pendentes</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setActiveTab('FINANCE');
+                        soundService.playUISelect();
+                      }}
+                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 rounded-xl text-[10px] font-black uppercase flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Abrir Gestão Financeira</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick links & recent 4 transactions */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <button
+                    onClick={() => {
+                      setTransTypeFilter('DEPOSIT');
+                      setTransStatusFilter('PENDING');
+                      setActiveTab('FINANCE');
+                      soundService.playUISelect();
+                    }}
+                    className="p-3.5 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider">Novos Depósitos</span>
+                      <span className="text-xs">📥</span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-white mt-1">
+                      {pendingDepositsCount} <span className="text-[10px] text-emerald-400 font-sans">aguardando</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-medium mt-1 group-hover:text-emerald-300 flex items-center gap-1">
+                      <span>Filtrar depósitos</span>
+                      <ArrowUpRight className="w-3 h-3" />
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setTransTypeFilter('WITHDRAW');
+                      setTransStatusFilter('PENDING');
+                      setActiveTab('FINANCE');
+                      soundService.playUISelect();
+                    }}
+                    className="p-3.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase text-red-400 tracking-wider">Novos Saques</span>
+                      <span className="text-xs">📤</span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-white mt-1">
+                      {pendingWithdrawalsCount} <span className="text-[10px] text-red-400 font-sans">aguardando</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-medium mt-1 group-hover:text-red-300 flex items-center gap-1">
+                      <span>Filtrar saques</span>
+                      <ArrowDownLeft className="w-3 h-3" />
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setTransDateFilter('TODAY');
+                      setTransTypeFilter('ALL');
+                      setTransStatusFilter('ALL');
+                      setActiveTab('FINANCE');
+                      soundService.playUISelect();
+                    }}
+                    className="p-3.5 rounded-2xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase text-blue-400 tracking-wider">Pedidos de Hoje</span>
+                      <span className="text-xs">🕒</span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-white mt-1">
+                      {todayTransactionsCount} <span className="text-[10px] text-blue-400 font-sans">registados</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-medium mt-1 group-hover:text-blue-300 flex items-center gap-1">
+                      <span>Ver últimas 24h</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setTransTypeFilter('ALL');
+                      setTransStatusFilter('ALL');
+                      setTransDateFilter('ALL');
+                      setActiveTab('FINANCE');
+                      soundService.playUISelect();
+                    }}
+                    className="p-3.5 rounded-2xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase text-purple-400 tracking-wider">Histórico Total</span>
+                      <span className="text-xs">📚</span>
+                    </div>
+                    <div className="text-xl font-black font-mono text-white mt-1">
+                      {transactions.length} <span className="text-[10px] text-purple-400 font-sans">pedidos</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-medium mt-1 group-hover:text-purple-300 flex items-center gap-1">
+                      <span>Explorar todos</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </div>
+                  </button>
+                </div>
+
+                {/* Latest 3 Transactions Mini Cards */}
+                <div className="space-y-2 pt-2">
+                  {transactions.slice(0, 3).map(t => (
+                    <div
+                      key={t.id}
+                      className="p-3 bg-white/5 hover:bg-white/[0.07] rounded-2xl border border-white/5 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
+                          t.type === 'DEPOSIT' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {t.type === 'DEPOSIT' ? '📥' : '📤'}
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-white flex items-center gap-2">
+                            <span>{t.userName}</span>
+                            <span className={`text-[8px] font-black px-1.5 py-0.2 rounded uppercase ${
+                              t.status === 'PENDING' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                              t.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                            }`}>
+                              {t.status === 'PENDING' ? 'Pendente' : t.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            {t.method} • <span className="text-amber-400/80 font-mono">{getRelativeTime(t.timestamp)}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className={`font-mono font-black ${t.type === 'DEPOSIT' ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          {t.amount.toFixed(2)} USDT
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSearchTrans(t.id);
+                            setActiveTab('FINANCE');
+                            soundService.playUISelect();
+                          }}
+                          className="text-[9px] text-slate-400 hover:text-emerald-400 font-bold uppercase transition-colors cursor-pointer"
+                        >
+                          Ver Detalhes →
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -1157,90 +1500,490 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
           {activeTab === 'FINANCE' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               
-              <div className="bg-[#090e17] p-6 rounded-3xl border border-white/10 flex items-center justify-between">
+              {/* HEADER BANNER */}
+              <div className="bg-[#090e17] p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-black text-sm uppercase text-white flex items-center gap-2">
+                  <h3 className="font-black text-base uppercase text-white flex items-center gap-2.5">
                     <Wallet className="w-5 h-5 text-amber-400" />
-                    <span>Fila de Pedidos de Depósito & Levantamento</span>
+                    <span>Aprovação Financeira & Auditoria de Pedidos</span>
                   </h3>
-                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                    Aprovação imediata credita ou deduz o saldo no perfil do jogador
+                  <p className="text-xs text-slate-400 font-medium mt-1">
+                    Filtre, audite e processe pedidos recentes de depósitos e saques em tempo real
                   </p>
                 </div>
 
-                <div className="bg-amber-500/20 text-amber-300 border border-amber-500/30 font-black px-3.5 py-1.5 rounded-xl text-xs uppercase">
-                  {transactions.filter(t => t.status === 'PENDING').length} Pendentes
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {pendingCount > 0 && (
+                    <div className="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black px-3.5 py-1.5 rounded-xl text-xs uppercase flex items-center gap-2 animate-pulse shadow-lg shadow-amber-500/10">
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      <span>{pendingCount} Pendentes</span>
+                    </div>
+                  )}
+
+                  <div className="bg-slate-800/80 text-slate-300 border border-white/10 font-mono font-bold px-3.5 py-1.5 rounded-xl text-xs">
+                    Total: {transactions.length} pedidos
+                  </div>
+                </div>
+              </div>
+
+              {/* QUICK PRESET FILTER CHIPS */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
+                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1 shrink-0 mr-1">
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Filtros Rápidos:</span>
+                </span>
+
+                {/* 1. Todos */}
+                <button
+                  onClick={() => {
+                    setTransTypeFilter('ALL');
+                    setTransStatusFilter('ALL');
+                    setTransDateFilter('ALL');
+                    soundService.playUISelect();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold uppercase text-[11px] transition-all shrink-0 cursor-pointer border ${
+                    transTypeFilter === 'ALL' && transStatusFilter === 'ALL' && transDateFilter === 'ALL'
+                      ? 'bg-[#049444] text-white border-[#049444] shadow-lg shadow-[#049444]/30'
+                      : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10'
+                  }`}
+                >
+                  Todos ({transactions.length})
+                </button>
+
+                {/* 2. Novos Pendentes (Geral) */}
+                <button
+                  onClick={() => {
+                    setTransTypeFilter('ALL');
+                    setTransStatusFilter('PENDING');
+                    setTransDateFilter('ALL');
+                    soundService.playUISelect();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black uppercase text-[11px] transition-all shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+                    transTypeFilter === 'ALL' && transStatusFilter === 'PENDING'
+                      ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/30'
+                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  }`}
+                >
+                  <span>⚡ Novos Pendentes</span>
+                  <span className="font-mono bg-black/30 px-1.5 py-0.2 rounded-full text-[10px]">{pendingCount}</span>
+                </button>
+
+                {/* 3. Novos Depósitos Pendentes */}
+                <button
+                  onClick={() => {
+                    setTransTypeFilter('DEPOSIT');
+                    setTransStatusFilter('PENDING');
+                    soundService.playUISelect();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black uppercase text-[11px] transition-all shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+                    transTypeFilter === 'DEPOSIT' && transStatusFilter === 'PENDING'
+                      ? 'bg-emerald-500 text-black border-emerald-400 shadow-lg shadow-emerald-500/30'
+                      : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  }`}
+                >
+                  <span>📥 Novos Depósitos</span>
+                  <span className="font-mono bg-black/30 px-1.5 py-0.2 rounded-full text-[10px]">{pendingDepositsCount}</span>
+                </button>
+
+                {/* 4. Novos Saques Pendentes */}
+                <button
+                  onClick={() => {
+                    setTransTypeFilter('WITHDRAW');
+                    setTransStatusFilter('PENDING');
+                    soundService.playUISelect();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black uppercase text-[11px] transition-all shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+                    transTypeFilter === 'WITHDRAW' && transStatusFilter === 'PENDING'
+                      ? 'bg-red-500 text-white border-red-400 shadow-lg shadow-red-500/30'
+                      : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'
+                  }`}
+                >
+                  <span>📤 Novos Saques</span>
+                  <span className="font-mono bg-black/30 px-1.5 py-0.2 rounded-full text-[10px]">{pendingWithdrawalsCount}</span>
+                </button>
+
+                {/* 5. Pedidos de Hoje */}
+                <button
+                  onClick={() => {
+                    setTransDateFilter('TODAY');
+                    soundService.playUISelect();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold uppercase text-[11px] transition-all shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+                    transDateFilter === 'TODAY'
+                      ? 'bg-blue-500 text-white border-blue-400 shadow-lg shadow-blue-500/30'
+                      : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border-blue-500/30'
+                  }`}
+                >
+                  <span>🕒 Hoje (24h)</span>
+                  <span className="font-mono bg-black/30 px-1.5 py-0.2 rounded-full text-[10px]">{todayTransactionsCount}</span>
+                </button>
+
+                {/* 6. Aprovados */}
+                <button
+                  onClick={() => {
+                    setTransStatusFilter('APPROVED');
+                    soundService.playUISelect();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold uppercase text-[11px] transition-all shrink-0 cursor-pointer border ${
+                    transStatusFilter === 'APPROVED'
+                      ? 'bg-emerald-600 text-white border-emerald-500'
+                      : 'bg-white/5 hover:bg-white/10 text-slate-400 border-white/10'
+                  }`}
+                >
+                  ✅ Aprovados ({transactions.filter(t => t.status === 'APPROVED').length})
+                </button>
+
+                {/* 7. Rejeitados */}
+                <button
+                  onClick={() => {
+                    setTransStatusFilter('REJECTED');
+                    soundService.playUISelect();
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold uppercase text-[11px] transition-all shrink-0 cursor-pointer border ${
+                    transStatusFilter === 'REJECTED'
+                      ? 'bg-red-600 text-white border-red-500'
+                      : 'bg-white/5 hover:bg-white/10 text-slate-400 border-white/10'
+                  }`}
+                >
+                  ❌ Rejeitados ({transactions.filter(t => t.status === 'REJECTED').length})
+                </button>
+              </div>
+
+              {/* ADVANCED FILTER TOOLBAR */}
+              <div className="bg-[#090e17] p-5 rounded-3xl border border-white/10 space-y-4 shadow-xl">
+                
+                {/* Search and Main Filters Row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3">
+                  
+                  {/* Search input */}
+                  <div className="lg:col-span-4 relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={searchTrans}
+                      onChange={(e) => setSearchTrans(e.target.value)}
+                      placeholder="Pesquisar por jogador, ID, valor, carteira..."
+                      className="w-full bg-black/50 border border-white/10 rounded-2xl pl-10 pr-9 py-2.5 text-xs text-white placeholder:text-slate-500 outline-none focus:border-[#049444] transition-colors"
+                    />
+                    {searchTrans && (
+                      <button
+                        onClick={() => setSearchTrans('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Tipo de Operação */}
+                  <div className="lg:col-span-2">
+                    <select
+                      value={transTypeFilter}
+                      onChange={(e) => {
+                        setTransTypeFilter(e.target.value as TransTypeFilter);
+                        soundService.playUISelect();
+                      }}
+                      className="w-full bg-black/50 border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-white outline-none focus:border-[#049444] font-medium cursor-pointer"
+                    >
+                      <option value="ALL">Fluxo: Todos os Tipos</option>
+                      <option value="DEPOSIT">📥 Depósitos Apenas</option>
+                      <option value="WITHDRAW">📤 Saques / Levantamentos</option>
+                    </select>
+                  </div>
+
+                  {/* Status */}
+                  <div className="lg:col-span-2">
+                    <select
+                      value={transStatusFilter}
+                      onChange={(e) => {
+                        setTransStatusFilter(e.target.value as TransStatusFilter);
+                        soundService.playUISelect();
+                      }}
+                      className="w-full bg-black/50 border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-white outline-none focus:border-[#049444] font-medium cursor-pointer"
+                    >
+                      <option value="ALL">Status: Todos</option>
+                      <option value="PENDING">🟡 Pendentes / Novos</option>
+                      <option value="APPROVED">🟢 Aprovados</option>
+                      <option value="REJECTED">🔴 Rejeitados</option>
+                    </select>
+                  </div>
+
+                  {/* Período / Recência */}
+                  <div className="lg:col-span-2">
+                    <select
+                      value={transDateFilter}
+                      onChange={(e) => {
+                        setTransDateFilter(e.target.value as TransDateFilter);
+                        soundService.playUISelect();
+                      }}
+                      className="w-full bg-black/50 border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-white outline-none focus:border-[#049444] font-medium cursor-pointer"
+                    >
+                      <option value="ALL">Data: Todo Histórico</option>
+                      <option value="TODAY">🕒 Hoje (Últimas 24h)</option>
+                      <option value="LAST_7_DAYS">🗓️ Últimos 7 Dias</option>
+                      <option value="LAST_30_DAYS">📅 Últimos 30 Dias</option>
+                    </select>
+                  </div>
+
+                  {/* Canal / Método */}
+                  <div className="lg:col-span-2">
+                    <select
+                      value={transMethodFilter}
+                      onChange={(e) => {
+                        setTransMethodFilter(e.target.value);
+                        soundService.playUISelect();
+                      }}
+                      className="w-full bg-black/50 border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-white outline-none focus:border-[#049444] font-medium cursor-pointer"
+                    >
+                      <option value="ALL">Canal: Todos os Meios</option>
+                      <option value="CRYPTO">🪙 Cripto USDT / TRC20</option>
+                      <option value="PIX">🇧🇷 PIX Automático</option>
+                      <option value="BANK">🏦 Multicaixa / Bancos</option>
+                      <option value="UNITEL">📱 Unitel Money</option>
+                      <option value="ADMIN">⚙️ Ajuste Manual Admin</option>
+                    </select>
+                  </div>
+
+                </div>
+
+                {/* Sub-row: Sort & Reset button */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/5 text-xs">
+                  
+                  {/* Sort selection */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 font-semibold text-[11px] flex items-center gap-1">
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ordenar por:</span>
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => setTransSort('RECENT_FIRST')}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                          transSort === 'RECENT_FIRST' ? 'bg-[#049444]/20 text-[#049444] border border-[#049444]/40 font-black' : 'bg-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        ⏱️ Mais Recentes
+                      </button>
+                      <button
+                        onClick={() => setTransSort('OLDEST_FIRST')}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                          transSort === 'OLDEST_FIRST' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black' : 'bg-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        ⏳ Mais Antigos
+                      </button>
+                      <button
+                        onClick={() => setTransSort('HIGHEST_AMOUNT')}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                          transSort === 'HIGHEST_AMOUNT' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-black' : 'bg-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        💎 Maior Valor
+                      </button>
+                      <button
+                        onClick={() => setTransSort('LOWEST_AMOUNT')}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                          transSort === 'LOWEST_AMOUNT' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 font-black' : 'bg-white/5 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🪙 Menor Valor
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Reset Filters */}
+                  {isFilterActive && (
+                    <button
+                      onClick={clearAllTransFilters}
+                      className="px-3 py-1 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-[11px] font-black uppercase transition-all flex items-center gap-1.5 cursor-pointer ml-auto"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Limpar Filtros Ativos</span>
+                    </button>
+                  )}
+                </div>
+
+              </div>
+
+              {/* FILTERED SUMMARY KPI BAR */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-[#090e17] p-3.5 rounded-2xl border border-white/10">
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Registos Filtrados</span>
+                  <div className="text-lg font-black font-mono text-white mt-0.5">
+                    {filteredTransactions.length} <span className="text-[10px] text-slate-500 font-sans">pedidos</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#090e17] p-3.5 rounded-2xl border border-white/10">
+                  <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider block">Volume Depósitos</span>
+                  <div className="text-lg font-black font-mono text-emerald-400 mt-0.5">
+                    {filteredDepositsVolume.toFixed(2)} <span className="text-[10px] font-sans">USDT</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#090e17] p-3.5 rounded-2xl border border-white/10">
+                  <span className="text-[9px] font-black uppercase text-amber-400 tracking-wider block">Volume Saques</span>
+                  <div className="text-lg font-black font-mono text-amber-300 mt-0.5">
+                    {filteredWithdrawalsVolume.toFixed(2)} <span className="text-[10px] font-sans">USDT</span>
+                  </div>
+                </div>
+
+                <div className={`p-3.5 rounded-2xl border ${filteredPendingCount > 0 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-[#090e17] border-white/10'}`}>
+                  <span className="text-[9px] font-black uppercase text-amber-400 tracking-wider block">Pendentes Filtrados</span>
+                  <div className="text-lg font-black font-mono text-amber-300 mt-0.5 flex items-center gap-1.5">
+                    <span>{filteredPendingCount}</span>
+                    {filteredPendingCount > 0 && <span className="text-[10px] font-sans bg-amber-500/30 text-amber-200 px-1.5 py-0.2 rounded uppercase font-black">Ação Requerida</span>}
+                  </div>
                 </div>
               </div>
 
               {/* TRANSACTIONS LIST */}
               <div className="space-y-3">
-                {transactions.length === 0 ? (
-                  <div className="py-16 text-center text-slate-500 font-bold text-xs uppercase tracking-widest bg-[#090e17] rounded-3xl border border-white/10">
-                    Nenhuma transação registada até ao momento.
+                {filteredTransactions.length === 0 ? (
+                  <div className="py-16 text-center bg-[#090e17] rounded-3xl border border-white/10 p-8 space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 mx-auto flex items-center justify-center text-slate-500">
+                      <Inbox className="w-6 h-6" />
+                    </div>
+                    <div className="text-white font-extrabold text-sm">
+                      Nenhuma transação encontrada com os filtros selecionados.
+                    </div>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      Tente alterar as opções de tipo (Depósito/Saque), status ou limpar a barra de pesquisa para visualizar outros registos.
+                    </p>
+                    {isFilterActive && (
+                      <button
+                        onClick={clearAllTransFilters}
+                        className="mt-2 px-4 py-2 bg-[#049444] hover:bg-emerald-600 text-white font-black text-xs uppercase rounded-xl shadow-lg transition-all cursor-pointer"
+                      >
+                        Limpar Todos os Filtros
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  transactions.map(t => (
+                  filteredTransactions.map(t => (
                     <div
                       key={t.id}
                       className={`p-5 rounded-3xl border transition-all flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 ${
                         t.status === 'PENDING'
                           ? 'bg-[#0f1724] border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
                           : t.status === 'APPROVED'
-                          ? 'bg-[#090e17] border-emerald-500/20 opacity-90'
-                          : 'bg-[#090e17] border-red-500/20 opacity-70'
+                          ? 'bg-[#090e17] border-emerald-500/20 opacity-95'
+                          : 'bg-[#090e17] border-red-500/20 opacity-75'
                       }`}
                     >
                       <div className="flex items-start sm:items-center gap-4 w-full lg:w-auto">
+                        
+                        {/* Icon Type Box */}
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0 font-bold ${
                           t.type === 'DEPOSIT' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
                         }`}>
                           {t.type === 'DEPOSIT' ? '📥' : '📤'}
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          
+                          {/* Top Tag Row */}
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-extrabold text-sm text-white">{t.userName}</span>
-                            <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${
-                              t.type === 'DEPOSIT' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                            
+                            {/* Type Pill */}
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg uppercase ${
+                              t.type === 'DEPOSIT' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
                             }`}>
                               {t.type === 'DEPOSIT' ? 'Depósito' : 'Saque / Levantamento'}
                             </span>
+
+                            {/* Status Tag */}
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg uppercase border flex items-center gap-1 ${
+                              t.status === 'PENDING'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                                : t.status === 'APPROVED'
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                : 'bg-red-500/20 text-red-400 border-red-500/30'
+                            }`}>
+                              {t.status === 'PENDING' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+                              <span>{t.status === 'PENDING' ? 'Pendente' : t.status === 'APPROVED' ? 'Aprovado' : 'Rejeitado'}</span>
+                            </span>
+
+                            {/* Relative time pill */}
+                            <span className="text-[9px] font-mono font-bold bg-white/5 text-amber-400/90 border border-white/10 px-2 py-0.5 rounded-lg">
+                              {getRelativeTime(t.timestamp)}
+                            </span>
+
                             {t.isAutomaticPayout && (
                               <span className="text-[8px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded uppercase">
                                 ⚡ Plisio Automático
                               </span>
                             )}
                           </div>
-                          <p className="text-[10px] text-slate-400 font-medium">
-                            {t.method} • <span className="font-mono">{t.timestamp}</span> • <span className="font-mono text-slate-500">ID: {t.id}</span>
-                          </p>
+
+                          {/* Secondary Meta Row */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                            <span className="font-semibold text-slate-300">{t.method}</span>
+                            <span>•</span>
+                            <span className="font-mono text-slate-400">{t.timestamp}</span>
+                            <span>•</span>
+                            <span className="font-mono text-slate-500 flex items-center gap-1">
+                              <span>ID: {t.id}</span>
+                              <button
+                                onClick={() => handleCopyToClipboard(t.id, 'ID da Transação')}
+                                className="hover:text-emerald-400 transition-colors p-0.5 cursor-pointer"
+                                title="Copiar ID"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </span>
+                          </div>
+
+                          {/* Account / Wallet Address Details */}
                           {t.accountDetails && (
-                            <p className="text-[10px] text-amber-300 font-mono mt-0.5 break-all">
-                              {t.accountDetails}
-                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[10px] text-slate-400 font-bold">Destino:</span>
+                              <p className="text-[10px] text-amber-300 font-mono break-all bg-black/40 px-2 py-0.5 rounded-lg border border-white/5 flex items-center gap-1.5">
+                                <span>{t.accountDetails}</span>
+                                <button
+                                  onClick={() => handleCopyToClipboard(t.accountDetails || '', 'Carteira/Conta')}
+                                  className="text-slate-400 hover:text-white p-0.5 cursor-pointer shrink-0"
+                                  title="Copiar endereço"
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                              </p>
+                            </div>
                           )}
+
+                          {/* Blockchain Explorer Link */}
                           {t.txUrl && (
-                            <a
-                              href={t.txUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold inline-flex items-center gap-1 mt-0.5"
-                            >
-                              <span>🔗 Explorador Blockchain ({t.txHash ? t.txHash.substring(0, 12) + '...' : 'Ver Tx'})</span>
-                            </a>
+                            <div>
+                              <a
+                                href={t.txUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold inline-flex items-center gap-1 mt-0.5"
+                              >
+                                <span>🔗 Explorador Blockchain ({t.txHash ? t.txHash.substring(0, 12) + '...' : 'Ver Tx'})</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-t-0 border-white/5">
+                      {/* Right Action Block */}
+                      <div className="flex flex-wrap items-center justify-between lg:justify-end gap-4 w-full lg:w-auto pt-3 lg:pt-0 border-t lg:border-t-0 border-white/5">
+                        
+                        {/* Amount */}
                         <div className="text-left lg:text-right">
                           <span className="text-[9px] text-slate-400 uppercase font-black block">Montante</span>
                           <span className={`text-xl font-mono font-black ${t.type === 'DEPOSIT' ? 'text-emerald-400' : 'text-amber-300'}`}>
                             {t.amount.toFixed(2)} USDT
                           </span>
+                          <span className="text-[9px] font-mono text-slate-500 block">
+                            ≈ {(t.amount * 1000).toLocaleString('pt-AO')} Kz
+                          </span>
                         </div>
 
+                        {/* Action Buttons */}
                         {t.status === 'PENDING' ? (
                           <div className="flex flex-wrap items-center gap-2">
                             {/* Option 1: Automatic Plisio Crypto Payout */}
@@ -1248,7 +1991,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                               <button
                                 onClick={() => handleExecutePlisioPayout(t)}
                                 disabled={payoutLoadingId === t.id}
-                                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+                                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition-all cursor-pointer flex items-center gap-1.5"
                                 title="Executar pagamento instantâneo via API da Plisio"
                               >
                                 <span>{payoutLoadingId === t.id ? 'A Enviar...' : '⚡ Pagar via Plisio'}</span>
@@ -1258,27 +2001,32 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                             {/* Option 2: Manual Approval */}
                             <button
                               onClick={() => handleResolveTransaction(t.id, 'APPROVED')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
-                              title="Aprovar manualmente sem chamar API externa"
+                              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-emerald-600/30 transition-all cursor-pointer flex items-center gap-1"
+                              title="Aprovar manualmente e creditar/liquidar saldo"
                             >
-                              ✓ Aprovar Manual
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Aprovar Manual</span>
                             </button>
 
                             {/* Option 3: Reject & Refund */}
                             <button
                               onClick={() => handleResolveTransaction(t.id, 'REJECTED')}
-                              className="px-3.5 py-2 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase transition-all cursor-pointer"
+                              className="px-3.5 py-2.5 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase transition-all cursor-pointer flex items-center gap-1"
                               title="Rejeitar pedido e devolver saldo ao usuário"
                             >
-                              ✕ Rejeitar & Estornar
+                              <X className="w-3.5 h-3.5" />
+                              <span>Rejeitar & Estornar</span>
                             </button>
                           </div>
                         ) : (
-                          <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border ${
-                            t.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'
-                          }`}>
-                            {t.status === 'APPROVED' ? '✓ APROVADO COM SUCESSO' : '✕ REJEITADO / ESTORNADO'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border flex items-center gap-1.5 ${
+                              t.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'
+                            }`}>
+                              {t.status === 'APPROVED' ? <CheckCheck className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                              <span>{t.status === 'APPROVED' ? 'Processado / Aprovado' : 'Rejeitado / Estornado'}</span>
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>

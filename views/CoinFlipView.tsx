@@ -21,19 +21,21 @@ const CoinFlipView: React.FC<CoinFlipViewProps> = ({ balance, onUpdateBalance, o
     
     setFlipping(true);
     setResult(null);
-    soundService.playTakeoff();
+    soundService.playCoinToss();
 
     setTimeout(() => {
       const outcome = Math.random() > 0.5 ? 'HEADS' : 'TAILS';
       setResult(outcome);
       setFlipping(false);
+      soundService.playCoinCatch();
       
       if (outcome === choice) {
-        setStreak(prev => prev + 1);
-        soundService.playWin();
+        const nextStreak = streak + 1;
+        setStreak(nextStreak);
+        soundService.playCoinStreak(nextStreak);
       } else {
         setStreak(0);
-        soundService.playCrash();
+        soundService.playDiceLoss();
       }
     }, 1200);
   };
@@ -44,7 +46,7 @@ const CoinFlipView: React.FC<CoinFlipViewProps> = ({ balance, onUpdateBalance, o
     onUpdateBalance(win);
     setStreak(0);
     setResult(null);
-    soundService.playWin();
+    soundService.playCoinCashout();
   };
 
   const currentMultiplier = streak > 0 ? Math.pow(1.95, streak) : 1;

@@ -61,7 +61,7 @@ const RefundView: React.FC<RefundViewProps> = ({ onBack }) => {
             <ul className="list-disc list-inside space-y-1 text-slate-400 pl-2">
               <li><strong>Saldo em Conta / USDT:</strong> Processamento imediato ou até 2 horas.</li>
               <li><strong>Transações Bancárias (IBAN / Multicaixa Express):</strong> Entre 24 a 48 horas úteis, dependendo do banco emissor.</li>
-              <li><strong>Chave PIX / Crypto (Plisio):</strong> De 15 a 60 minutos após validação na blockchain.</li>
+              <li><strong>Chave PIX / Criptomoedas (Blockchain):</strong> De 15 a 60 minutos após validação na blockchain.</li>
             </ul>
           </section>
 
