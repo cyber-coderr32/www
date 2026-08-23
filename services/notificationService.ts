@@ -18,48 +18,25 @@ const LOCAL_NOTIFS_KEY = 'cryptonbet_notifications_db';
 const LOCAL_NOTIFS_INIT_KEY = 'cryptonbet_notifications_initialized_v2';
 const LOCAL_DELETED_NOTIFS_KEY = 'cryptonbet_deleted_notif_ids';
 
-export const INITIAL_SYSTEM_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: 'notif_welcome_system',
-    title: '🎉 Bem-vindo à CryptonBet Angola!',
-    message: 'Aproveite o melhor ecossistema de apostas com saques rápidos via Cripto (USDT), Multicaixa Express e PIX. Conheça também o Mercado P2P e os E-books exclusivos!',
-    type: 'INFO',
-    target: 'ALL',
-    targetUserName: 'Todos os Jogadores',
-    senderName: 'Equipa CryptonBet',
-    createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-    readBy: [],
-    priority: 'HIGH',
-    actionView: 'PROMOTIONS',
-    actionText: 'Ver Bónus'
-  },
-  {
-    id: 'notif_aviator_promo',
-    title: '🚀 Torneio de Aviator & Poke Chomp VIP',
-    message: 'Grandes multiplicadores hoje! Acumule pontos jogando e dispute o jackpot semanal com premiação direta em USDT.',
-    type: 'PROMO',
-    target: 'ALL',
-    targetUserName: 'Todos os Jogadores',
-    senderName: 'Administração',
-    createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-    readBy: [],
-    priority: 'NORMAL',
-    actionView: 'AVIATOR',
-    actionText: 'Jogar Aviator'
-  }
-];
+export const INITIAL_SYSTEM_NOTIFICATIONS: AppNotification[] = [];
+
+// Legacy sample IDs to automatically purge
+const LEGACY_SAMPLE_IDS = ['notif_welcome_system', 'notif_aviator_promo'];
 
 export const notificationService = {
   // Retrieve deleted notification IDs to prevent resurrection from snapshot or cache
   getDeletedIds: (): Set<string> => {
+    const set = new Set<string>(LEGACY_SAMPLE_IDS);
     try {
       const stored = localStorage.getItem(LOCAL_DELETED_NOTIFS_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return new Set(parsed);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(id => set.add(id));
+        }
       }
     } catch (e) {}
-    return new Set();
+    return set;
   },
 
   // Record deleted notification IDs permanently

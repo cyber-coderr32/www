@@ -222,10 +222,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
   const [notifSearchUserText, setNotifSearchUserText] = useState('');
   const [notifType, setNotifType] = useState<AppNotification['type']>('BONUS');
   const [notifPriority, setNotifPriority] = useState<AppNotification['priority']>('HIGH');
-  const [notifTitle, setNotifTitle] = useState('🎉 Bónus Exclusivo de Depósito');
-  const [notifMessage, setNotifMessage] = useState('Faça uma recarga hoje e receba 100% de bónus instantâneo na sua conta!');
-  const [notifActionView, setNotifActionView] = useState<ViewState | ''>('AVIATOR');
-  const [notifActionText, setNotifActionText] = useState('Aproveitar Bónus');
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifActionView, setNotifActionView] = useState<ViewState | ''>('');
+  const [notifActionText, setNotifActionText] = useState('');
   const [notifAudioUrl, setNotifAudioUrl] = useState<string | null>(null);
   const [notifAudioDuration, setNotifAudioDuration] = useState<number>(0);
   const [isSendingNotif, setIsSendingNotif] = useState(false);
