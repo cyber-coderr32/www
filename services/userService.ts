@@ -3,6 +3,7 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
   serverTimestamp,
   collection,
   addDoc,
@@ -283,6 +284,51 @@ export const userService = {
         timestamp: new Date().toISOString()
       });
       localStorage.setItem('cryptonbet_local_game_history', JSON.stringify(history));
+    }
+  },
+
+  deleteUserProfile: async (uid: string) => {
+    if (!uid) return;
+
+    // 1. Remove from cryptonbet_local_users_db
+    try {
+      const localUsers = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '[]');
+      const filtered = localUsers.filter((u: any) => u.uid !== uid && u.id !== uid);
+      localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(filtered));
+    } catch (e) {}
+
+    // 2. Remove from legacy skyhigh_users
+    try {
+      const skyUsers = JSON.parse(localStorage.getItem('skyhigh_users') || '[]');
+      const filteredSky = skyUsers.filter((u: any) => u.id !== uid && u.uid !== uid);
+      localStorage.setItem('skyhigh_users', JSON.stringify(filteredSky));
+    } catch (e) {}
+
+    // 3. Clear active session if this user was logged in
+    try {
+      const active = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (active) {
+        const parsed = JSON.parse(active);
+        if (parsed.uid === uid || parsed.id === uid) {
+          localStorage.removeItem(ACTIVE_SESSION_KEY);
+        }
+      }
+      const skyUser = localStorage.getItem('skyhigh_user');
+      if (skyUser) {
+        const parsed = JSON.parse(skyUser);
+        if (parsed.id === uid || parsed.uid === uid) {
+          localStorage.removeItem('skyhigh_user');
+        }
+      }
+    } catch (e) {}
+
+    // 4. Delete Firestore document
+    if (!uid.startsWith('local_')) {
+      try {
+        await deleteDoc(doc(db, 'users', uid));
+      } catch (error) {
+        console.warn("Firestore deleteUserProfile failed:", error);
+      }
     }
   }
 };

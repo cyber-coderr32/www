@@ -238,10 +238,13 @@ export interface AppNotification {
   senderName?: string;
   createdAt: string;
   readBy?: string[];
+  deletedBy?: string[];
   actionUrl?: string;
   actionText?: string;
   actionView?: ViewState;
   priority?: 'NORMAL' | 'HIGH' | 'URGENT';
+  audioUrl?: string;
+  audioDuration?: number;
 }
 
 export interface GlobalSettings {

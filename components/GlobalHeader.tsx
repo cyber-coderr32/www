@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ViewState, UserAccount } from '../types';
 import { soundService } from '../services/soundService';
 import { motion, AnimatePresence } from 'motion/react';
@@ -155,6 +155,26 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   const [dbUsers, setDbUsers] = useState<any[]>([]);
   const [dbBooks, setDbBooks] = useState<any[]>([]);
   const [dbOffers, setDbOffers] = useState<any[]>([]);
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [isNotifModalOpen, setIsNotifModalOpen] = useState(false);
+
+  useEffect(() => {
+    const unsubNotifs = notificationService.subscribeToNotifications((list) => {
+      setNotifications(list);
+    });
+    return () => unsubNotifs();
+  }, []);
+
+  const unreadNotifsCount = useMemo(() => {
+    const currentUid = user?.id || '';
+    return notifications.filter(n => {
+      const isTarget = n.target === 'ALL' || n.target === currentUid || n.targetUserId === currentUid;
+      const isRead = (n.readBy || []).includes(currentUid);
+      return isTarget && !isRead;
+    }).length;
+  }, [notifications, user?.id]);
 
   // Fetch real content from Firestore database (and local fallback)
   useEffect(() => {
@@ -679,9 +699,35 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
           </AnimatePresence>
         </div>
 
-        {/* RIGHT SIDE: FULLSCREEN & ANUNCIAR BUTTONS */}
+        {/* RIGHT SIDE: NOTIFICATIONS, FULLSCREEN & ANUNCIAR BUTTONS */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           
+          {/* NOTIFICATION BELL BUTTON */}
+          <button
+            onClick={() => {
+              soundService.playUISelect();
+              setIsNotifModalOpen(true);
+            }}
+            className={`relative p-2 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-2xl font-black text-xs uppercase tracking-wider shadow-md hover:scale-105 transition-all cursor-pointer border shrink-0 active:scale-95 flex items-center gap-1.5 ${
+              unreadNotifsCount > 0
+                ? 'bg-[#049444]/25 text-[#049444] border-[#049444]/50 hover:bg-[#049444]/35 shadow-[0_0_15px_rgba(4,148,68,0.2)]'
+                : 'bg-white/10 text-white border-white/20 hover:bg-white/20'
+            }`}
+            title="Central de Notificações"
+          >
+            <div className="relative flex items-center justify-center">
+              <Bell className={`w-4 h-4 ${unreadNotifsCount > 0 ? 'text-[#049444] animate-bounce' : 'text-slate-300'}`} />
+              {unreadNotifsCount > 0 && (
+                <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-red-500 text-white rounded-full text-[9px] font-black flex items-center justify-center shadow-lg border-2 border-[#131d27]">
+                  {unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}
+                </span>
+              )}
+            </div>
+            <span className="hidden md:inline font-black text-xs">
+              {unreadNotifsCount > 0 ? `${unreadNotifsCount} Novo${unreadNotifsCount > 1 ? 's' : ''}` : 'Avisos'}
+            </span>
+          </button>
+
           {/* FULLSCREEN BUTTON */}
           <button
             onClick={toggleFullscreen}
@@ -724,6 +770,15 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
         </div>
 
       </div>
+
+      {/* NOTIFICATION CENTER MODAL */}
+      <NotificationCenterModal
+        isOpen={isNotifModalOpen}
+        onClose={() => setIsNotifModalOpen(false)}
+        notifications={notifications}
+        currentUserId={user?.id || 'guest'}
+        onSelectGame={onSelectGame}
+      />
     </header>
   );
 };

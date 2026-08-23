@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserAccount, TransactionRequest, GlobalSettings, PaymentMethod, P2POffer } from '../types';
+import { UserAccount, TransactionRequest, GlobalSettings, PaymentMethod, P2POffer, AppNotification, ViewState } from '../types';
 import { soundService } from '../services/soundService';
+import { notificationService } from '../services/notificationService';
 import { caktoService } from '../services/caktoService';
 import { plisioService, SUPPORTED_PLISIO_CRYPTOS } from '../services/plisioService';
+import { userService } from '../services/userService';
 import { db } from '../services/firebase';
 import { collection, getDocs, doc, updateDoc, setDoc, query, limit, deleteDoc } from 'firebase/firestore';
+import AudioVoiceRecorder from '../components/AudioVoiceRecorder';
+import AudioVoicePlayer from '../components/AudioVoicePlayer';
 import { 
   ShieldCheck, 
   TrendingUp, 
@@ -48,14 +52,19 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Layers,
-  CheckCheck
+  CheckCheck,
+  Bell,
+  Send,
+  Mic,
+  Gift,
+  Volume2
 } from 'lucide-react';
 
 interface AdminViewProps {
   onBack: () => void;
 }
 
-type AdminTab = 'DASHBOARD' | 'USERS' | 'FINANCE' | 'PAYMENTS' | 'ENGINE' | 'P2P_MARKET';
+type AdminTab = 'DASHBOARD' | 'USERS' | 'NOTIFICATIONS' | 'FINANCE' | 'PAYMENTS' | 'ENGINE' | 'P2P_MARKET';
 
 type TransTypeFilter = 'ALL' | 'DEPOSIT' | 'WITHDRAW';
 type TransStatusFilter = 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -200,6 +209,113 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
   const [selectedUserForCredit, setSelectedUserForCredit] = useState<UserAccount | null>(null);
   const [creditAmount, setCreditAmount] = useState<string>('');
   const [creditReason, setCreditReason] = useState<string>('Ajuste Administrativo');
+
+  // User Deletion State & Confirmation Modal
+  const [userToDelete, setUserToDelete] = useState<UserAccount | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [deleteUserTransactions, setDeleteUserTransactions] = useState(true);
+
+  // Notification Management State (Collective & Individual)
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifTarget, setNotifTarget] = useState<'ALL' | 'INDIVIDUAL'>('ALL');
+  const [selectedTargetUser, setSelectedTargetUser] = useState<UserAccount | null>(null);
+  const [notifSearchUserText, setNotifSearchUserText] = useState('');
+  const [notifType, setNotifType] = useState<AppNotification['type']>('BONUS');
+  const [notifPriority, setNotifPriority] = useState<AppNotification['priority']>('HIGH');
+  const [notifTitle, setNotifTitle] = useState('🎉 Bónus Exclusivo de Depósito');
+  const [notifMessage, setNotifMessage] = useState('Faça uma recarga hoje e receba 100% de bónus instantâneo na sua conta!');
+  const [notifActionView, setNotifActionView] = useState<ViewState | ''>('AVIATOR');
+  const [notifActionText, setNotifActionText] = useState('Aproveitar Bónus');
+  const [notifAudioUrl, setNotifAudioUrl] = useState<string | null>(null);
+  const [notifAudioDuration, setNotifAudioDuration] = useState<number>(0);
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+  const [notifFilterTab, setNotifFilterTab] = useState<'ALL' | 'BROADCAST' | 'INDIVIDUAL'>('ALL');
+
+  useEffect(() => {
+    const unsub = notificationService.subscribeToNotifications((list) => {
+      setNotifications(list);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleSendNotification = async () => {
+    if (!notifTitle.trim() || !notifMessage.trim()) {
+      alert("Por favor, preencha o título e a mensagem da notificação.");
+      return;
+    }
+
+    if (notifTarget === 'INDIVIDUAL' && !selectedTargetUser) {
+      alert("Por favor, selecione um usuário específico para enviar a notificação individual.");
+      return;
+    }
+
+    setIsSendingNotif(true);
+    soundService.playUISelect();
+
+    try {
+      await notificationService.sendNotification({
+        title: notifTitle.trim(),
+        message: notifMessage.trim(),
+        type: notifType,
+        target: notifTarget === 'ALL' ? 'ALL' : selectedTargetUser!.id,
+        targetUserId: notifTarget === 'INDIVIDUAL' ? selectedTargetUser!.id : undefined,
+        targetUserName: notifTarget === 'INDIVIDUAL' ? selectedTargetUser!.name : undefined,
+        targetUserEmail: notifTarget === 'INDIVIDUAL' ? selectedTargetUser!.email : undefined,
+        senderName: 'Administração CryptonBet',
+        priority: notifPriority,
+        actionView: notifActionView ? (notifActionView as ViewState) : undefined,
+        actionText: notifActionText.trim() || undefined,
+        audioUrl: notifAudioUrl || undefined,
+        audioDuration: notifAudioDuration || undefined
+      });
+
+      soundService.playWin();
+      showNotification(
+        notifTarget === 'ALL'
+          ? `📢 Notificação coletiva enviada para TODOS os jogadores!`
+          : `👤 Notificação individual enviada para ${selectedTargetUser!.name}!`
+      );
+
+      setNotifTitle('');
+      setNotifMessage('');
+      setNotifAudioUrl(null);
+      setNotifAudioDuration(0);
+      if (notifTarget === 'INDIVIDUAL') {
+        setSelectedTargetUser(null);
+      }
+    } catch (e: any) {
+      soundService.playCrash();
+      showNotification(`Erro ao enviar notificação: ${e.message}`);
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
+  const handleDeleteNotification = async (id: string) => {
+    soundService.playCrash();
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    await notificationService.deleteNotification(id);
+    showNotification("✅ Notificação eliminada com sucesso!");
+  };
+
+  const handleDeleteAllFilteredNotifs = async () => {
+    const currentFiltered = notifications.filter(n => {
+      if (notifFilterTab === 'BROADCAST') return n.target === 'ALL';
+      if (notifFilterTab === 'INDIVIDUAL') return n.target !== 'ALL';
+      return true;
+    });
+
+    if (currentFiltered.length === 0) return;
+    if (!window.confirm(`Deseja realmente eliminar todas as ${currentFiltered.length} notificações deste filtro?`)) return;
+
+    const idsToDelete = currentFiltered.map(n => n.id);
+    const idsSet = new Set(idsToDelete);
+
+    soundService.playCrash();
+    setNotifications(prev => prev.filter(n => !idsSet.has(n.id)));
+    await notificationService.deleteAllNotifications(idsToDelete);
+    showNotification(`✅ ${currentFiltered.length} notificações eliminadas com sucesso!`);
+  };
 
   const [webhookLogs, setWebhookLogs] = useState<any[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -579,23 +695,51 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
     showNotification(`Função de ${user.name} alterada para ${newRole}!`);
   };
 
-  // Delete User
-  const handleDeleteUser = async (user: UserAccount) => {
-    if (!window.confirm(`Tem certeza que deseja eliminar o usuário "${user.name}" (${user.email})? Esta ação é irreversível.`)) {
-      return;
-    }
+  // Delete User - Open Modal
+  const handleDeleteUser = (user: UserAccount) => {
+    soundService.playUISelect();
+    setUserToDelete(user);
+  };
 
-    const updated = users.filter(u => u.id !== user.id);
-    updateUsersState(updated);
+  // Confirm Delete User - Full Execution
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeletingUser(true);
+    soundService.playCrash();
 
     try {
-      await deleteDoc(doc(db, 'users', user.id));
-    } catch (e) {
-      // fallback
-    }
+      const targetId = userToDelete.id;
+      const targetName = userToDelete.name;
 
-    soundService.playCrash();
-    showNotification(`Usuário ${user.name} eliminado com sucesso!`);
+      // 1. Delete user from userService (Firestore & LocalStorage)
+      await userService.deleteUserProfile(targetId);
+
+      // 2. Update local state for users list
+      const updatedUsers = users.filter(u => u.id !== targetId);
+      updateUsersState(updatedUsers);
+
+      // 3. Delete related transactions if selected
+      if (deleteUserTransactions) {
+        const remainingTrans = transactions.filter(t => t.userId !== targetId);
+        setTransactions(remainingTrans);
+        localStorage.setItem(LOCAL_TRANS_KEY, JSON.stringify(remainingTrans));
+
+        const transToDelete = transactions.filter(t => t.userId === targetId);
+        for (const t of transToDelete) {
+          try {
+            await deleteDoc(doc(db, 'transactions', t.id));
+          } catch (err) {}
+        }
+      }
+
+      showNotification(`✅ Usuário "${targetName}" e seus dados foram eliminados permanentemente!`);
+      setUserToDelete(null);
+    } catch (err: any) {
+      soundService.playCrash();
+      showNotification(`❌ Erro ao eliminar usuário: ${err.message || 'Falha na operação'}`);
+    } finally {
+      setIsDeletingUser(false);
+    }
   };
 
   // Delete Payment Method
@@ -705,10 +849,20 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
     }
   };
 
+  const pendingCount = transactions.filter(t => t.status === 'PENDING').length;
+  const pendingDepositsCount = transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'PENDING').length;
+  const pendingWithdrawalsCount = transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'PENDING').length;
+
+  const approvedDeposits = transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'APPROVED').reduce((acc, t) => acc + t.amount, 0);
+  const approvedWithdrawals = transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'APPROVED').reduce((acc, t) => acc + t.amount, 0);
+  const totalUsersCount = users.length;
+  const totalBannedCount = users.filter(u => u.isBanned).length;
+
   const menuItems = [
     { id: 'DASHBOARD' as AdminTab, label: 'Telemetria & Dashboard', icon: <TrendingUp className="w-5 h-5 text-cyan-400" /> },
     { id: 'USERS' as AdminTab, label: 'Gestão de Jogadores', icon: <Users className="w-5 h-5 text-emerald-400" /> },
-    { id: 'FINANCE' as AdminTab, label: 'Aprovação Financeira', icon: <Wallet className="w-5 h-5 text-amber-400" /> },
+    { id: 'NOTIFICATIONS' as AdminTab, label: 'Central de Notificações', icon: <Bell className="w-5 h-5 text-amber-400" />, badge: notifications.length },
+    { id: 'FINANCE' as AdminTab, label: 'Aprovação Financeira', icon: <Wallet className="w-5 h-5 text-amber-400" />, badge: pendingCount },
     { id: 'PAYMENTS' as AdminTab, label: 'Métodos de Pagamento', icon: <CreditCard className="w-5 h-5 text-purple-400" /> },
     { id: 'ENGINE' as AdminTab, label: 'Motor & Algoritmos (RTP)', icon: <Cpu className="w-5 h-5 text-red-400" /> },
   ];
@@ -724,15 +878,6 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
       showNotification(`Texto: ${text}`);
     }
   };
-
-  const pendingCount = transactions.filter(t => t.status === 'PENDING').length;
-  const pendingDepositsCount = transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'PENDING').length;
-  const pendingWithdrawalsCount = transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'PENDING').length;
-
-  const approvedDeposits = transactions.filter(t => t.type === 'DEPOSIT' && t.status === 'APPROVED').reduce((acc, t) => acc + t.amount, 0);
-  const approvedWithdrawals = transactions.filter(t => t.type === 'WITHDRAW' && t.status === 'APPROVED').reduce((acc, t) => acc + t.amount, 0);
-  const totalUsersCount = users.length;
-  const totalBannedCount = users.filter(u => u.isBanned).length;
 
   const todayTransactionsCount = transactions.filter(t => {
     const d = parseTransactionDate(t.timestamp);
@@ -900,6 +1045,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                 </div>
                 <span>{item.label}</span>
               </div>
+
+              {item.id === 'NOTIFICATIONS' && notifications.length > 0 && (
+                <span className="bg-amber-500 text-black text-[9px] font-extrabold px-2 py-0.5 rounded-full">
+                  {notifications.length}
+                </span>
+              )}
 
               {item.id === 'FINANCE' && pendingCount > 0 && (
                 <span className="bg-amber-500 text-black text-[9px] font-extrabold px-2 py-0.5 rounded-full animate-bounce">
@@ -1386,6 +1537,135 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                 </div>
               )}
 
+              {/* MODAL: CONFIRM ELIMINATE USER */}
+              {userToDelete && (
+                <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[250] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                  <div className="bg-[#0e131f] border border-red-500/40 rounded-3xl p-6 w-full max-w-lg shadow-[0_0_50px_rgba(239,68,68,0.25)] space-y-5 text-white">
+                    
+                    {/* MODAL HEADER */}
+                    <div className="flex items-start justify-between border-b border-white/10 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+                          <Trash2 className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-base uppercase text-white tracking-wide flex items-center gap-2">
+                            <span>Eliminar Usuário</span>
+                            <span className="text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded-md border border-red-500/30 uppercase font-black">
+                              Irreversível
+                            </span>
+                          </h3>
+                          <p className="text-xs text-slate-400 font-medium">
+                            Confirme a exclusão definitiva da conta do jogador
+                          </p>
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => !isDeletingUser && setUserToDelete(null)}
+                        disabled={isDeletingUser}
+                        className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* USER PREVIEW CARD */}
+                    <div className="bg-black/50 border border-white/10 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl ${userToDelete.avatarColor || 'bg-gradient-to-tr from-[#049444] to-[#FFCC00]'} flex items-center justify-center text-white font-black text-sm`}>
+                            {userToDelete.name ? userToDelete.name.substring(0, 2).toUpperCase() : 'JG'}
+                          </div>
+                          <div>
+                            <div className="font-bold text-white text-sm">{userToDelete.name}</div>
+                            <div className="text-xs text-slate-400 font-mono">{userToDelete.email || 'Sem e-mail'}</div>
+                            {userToDelete.phone && (
+                              <div className="text-[10px] text-emerald-400 font-mono">{userToDelete.phone}</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border ${
+                          userToDelete.role === 'ADMIN'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-slate-800 text-slate-400 border-white/10'
+                        }`}>
+                          {userToDelete.role === 'ADMIN' ? '👑 ADMIN' : '👤 JOGADOR'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5 text-[11px]">
+                        <div className="bg-white/5 p-2 rounded-xl">
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">Saldo Atual:</span>
+                          <span className="font-mono font-black text-emerald-400 text-xs">
+                            {userToDelete.balance.toLocaleString('pt-AO')} Kz
+                          </span>
+                        </div>
+                        <div className="bg-white/5 p-2 rounded-xl">
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">ID do Usuário:</span>
+                          <span className="font-mono text-slate-300 text-[10px] truncate block">
+                            #{userToDelete.id}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* WARNING BOX */}
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                      <div className="text-xs text-red-200/90 leading-relaxed font-medium">
+                        <strong className="text-red-300 font-bold block mb-0.5">Aviso de Segurança:</strong>
+                        Esta ação removerá a conta do utilizador de forma definitiva do banco de dados, cancelando seu acesso e removendo seus registros do sistema.
+                      </div>
+                    </div>
+
+                    {/* OPTIONS */}
+                    <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer bg-white/5 p-3 rounded-xl hover:bg-white/10 transition-colors">
+                      <input 
+                        type="checkbox"
+                        checked={deleteUserTransactions}
+                        onChange={(e) => setDeleteUserTransactions(e.target.checked)}
+                        className="accent-red-500 w-4 h-4 rounded cursor-pointer"
+                      />
+                      <span>Eliminar também todo o histórico de transações e depósitos deste usuário</span>
+                    </label>
+
+                    {/* ACTION BUTTONS */}
+                    <div className="flex items-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setUserToDelete(null)}
+                        disabled={isDeletingUser}
+                        className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleConfirmDeleteUser}
+                        disabled={isDeletingUser}
+                        className="flex-1 py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-red-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {isDeletingUser ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Eliminando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4" />
+                            <span>Eliminar Definitivamente</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
               {/* SEARCH & FILTER BAR */}
               <div className="bg-[#090e17] p-4 lg:p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="relative w-full md:w-96">
@@ -1460,6 +1740,20 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button
+                                  onClick={() => {
+                                    setSelectedTargetUser(u);
+                                    setNotifTarget('INDIVIDUAL');
+                                    setActiveTab('NOTIFICATIONS');
+                                    soundService.playUISelect();
+                                  }}
+                                  className="px-3 py-1.5 bg-blue-500/20 text-blue-300 hover:bg-blue-500 hover:text-white border border-blue-500/30 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer flex items-center gap-1"
+                                  title="Enviar Notificação Direta para este Usuário"
+                                >
+                                  <Bell className="w-3 h-3" />
+                                  <span>Notificar</span>
+                                </button>
+
+                                <button
                                   onClick={() => setSelectedUserForCredit(u)}
                                   className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-white border border-emerald-500/30 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer"
                                 >
@@ -1491,6 +1785,555 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB: NOTIFICATIONS CENTER (COLLECTIVE & INDIVIDUAL) */}
+          {activeTab === 'NOTIFICATIONS' && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              
+              {/* TOP HEADER */}
+              <div className="bg-[#090e17] p-6 rounded-3xl border border-white/10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-xl">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-600 flex items-center justify-center text-black font-black shadow-lg">
+                      <Bell className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-base uppercase text-white tracking-wide">
+                        Central de Notificações Coletivas & Individuais
+                      </h3>
+                      <p className="text-xs text-slate-400 font-medium">
+                        Envie avisos em massa para todos os jogadores ou notificações exclusivas com áudio de voz para usuários específicos.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="px-3.5 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-black uppercase flex items-center gap-2">
+                    <Megaphone className="w-4 h-4 text-amber-400" />
+                    <span>{notifications.length} Notificações Ativas</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* MAIN 2-COLUMN GRID: COMPOSE + RECENT LIST */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                
+                {/* LEFT: COMPOSE FORM (7 Cols) */}
+                <div className="xl:col-span-7 bg-[#090e17] p-6 rounded-3xl border border-white/10 shadow-2xl space-y-5">
+                  <div className="border-b border-white/10 pb-4 flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase text-white flex items-center gap-2">
+                      <Send className="w-4 h-4 text-emerald-400" />
+                      <span>Criar e Disparar Notificação</span>
+                    </h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      Envio em Tempo Real
+                    </span>
+                  </div>
+
+                  {/* 1. TARGET MODE SELECTOR */}
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-black uppercase text-slate-300 block">
+                      1. Modo de Envio (Destinatário)
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundService.playUISelect();
+                          setNotifTarget('ALL');
+                          setSelectedTargetUser(null);
+                        }}
+                        className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer text-center ${
+                          notifTarget === 'ALL'
+                            ? 'bg-gradient-to-b from-amber-500/25 to-yellow-600/15 border-amber-400 text-white shadow-lg shadow-amber-500/10'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <Megaphone className={`w-5 h-5 ${notifTarget === 'ALL' ? 'text-amber-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-black uppercase tracking-wider">
+                          📢 Coletiva (Todos)
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Envia para todos os {users.length} usuários
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundService.playUISelect();
+                          setNotifTarget('INDIVIDUAL');
+                        }}
+                        className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer text-center ${
+                          notifTarget === 'INDIVIDUAL'
+                            ? 'bg-gradient-to-b from-blue-500/25 to-indigo-600/15 border-blue-400 text-white shadow-lg shadow-blue-500/10'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <Users className={`w-5 h-5 ${notifTarget === 'INDIVIDUAL' ? 'text-blue-400' : 'text-slate-500'}`} />
+                        <span className="text-xs font-black uppercase tracking-wider">
+                          👤 Individual (Jogador)
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Mensagem privada para 1 jogador
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 1.1 USER SELECTOR (IF INDIVIDUAL) */}
+                  {notifTarget === 'INDIVIDUAL' && (
+                    <div className="p-4 bg-black/40 border border-blue-500/30 rounded-2xl space-y-3 animate-in fade-in">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black uppercase text-blue-300">
+                          Selecione o Jogador Alvo
+                        </label>
+                        {selectedTargetUser && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTargetUser(null)}
+                            className="text-[10px] text-red-400 hover:underline uppercase font-bold"
+                          >
+                            Trocar Usuário
+                          </button>
+                        )}
+                      </div>
+
+                      {selectedTargetUser ? (
+                        <div className="flex items-center justify-between p-3 bg-blue-500/15 border border-blue-400/40 rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-black text-sm">
+                              {selectedTargetUser.name.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="text-xs font-black text-white">{selectedTargetUser.name}</div>
+                              <div className="text-[10px] font-mono text-slate-400">{selectedTargetUser.email}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[9px] uppercase font-bold text-slate-400 block">Saldo</span>
+                            <span className="text-xs font-mono font-black text-emerald-400">
+                              {selectedTargetUser.balance.toLocaleString('pt-AO')} Kz
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                            <input
+                              type="text"
+                              value={notifSearchUserText}
+                              onChange={(e) => setNotifSearchUserText(e.target.value)}
+                              placeholder="Pesquisar jogador por nome ou email..."
+                              className="w-full bg-[#0e1622] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-400"
+                            />
+                          </div>
+
+                          <div className="max-h-36 overflow-y-auto no-scrollbar space-y-1.5 pt-1">
+                            {users
+                              .filter(u =>
+                                !notifSearchUserText ||
+                                u.name.toLowerCase().includes(notifSearchUserText.toLowerCase()) ||
+                                u.email.toLowerCase().includes(notifSearchUserText.toLowerCase())
+                              )
+                              .slice(0, 8)
+                              .map(u => (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  onClick={() => {
+                                    soundService.playTick();
+                                    setSelectedTargetUser(u);
+                                  }}
+                                  className="w-full flex items-center justify-between p-2 rounded-xl bg-white/5 hover:bg-blue-600/20 border border-white/5 hover:border-blue-500/40 text-left transition-colors cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-full bg-blue-700/60 flex items-center justify-center text-white text-[10px] font-black">
+                                      {u.name.charAt(0)}
+                                    </span>
+                                    <div>
+                                      <span className="text-xs font-bold text-white">{u.name}</span>
+                                      <span className="text-[10px] font-mono text-slate-400 ml-2">({u.email})</span>
+                                    </div>
+                                  </div>
+                                  <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                                    {u.balance.toLocaleString('pt-AO')} Kz
+                                  </span>
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 2. TYPE & PRIORITY */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-black uppercase text-slate-300 block">
+                        2. Categoria / Tipo
+                      </label>
+                      <select
+                        value={notifType}
+                        onChange={(e) => setNotifType(e.target.value as any)}
+                        className="w-full bg-[#0e1622] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-bold outline-none focus:border-amber-400"
+                      >
+                        <option value="BONUS">🎁 Bónus & Ofertas</option>
+                        <option value="PROMO">🏆 Promoção & Torneio</option>
+                        <option value="INFO">ℹ️ Informativo / Notícia</option>
+                        <option value="ALERT">🚨 Alerta / Aviso Importante</option>
+                        <option value="WARNING">⚠️ Manutenção / Segurança</option>
+                        <option value="FINANCE">💰 Financeiro / Depósito & Saque</option>
+                        <option value="SUCCESS">✅ Confirmação / Conquista</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-black uppercase text-slate-300 block">
+                        Prioridade de Exibição
+                      </label>
+                      <select
+                        value={notifPriority}
+                        onChange={(e) => setNotifPriority(e.target.value as any)}
+                        className="w-full bg-[#0e1622] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-bold outline-none focus:border-amber-400"
+                      >
+                        <option value="NORMAL">Normal (Padrão)</option>
+                        <option value="HIGH">Alta (Destaque Dourado)</option>
+                        <option value="URGENT">⚡ Urgente (Destaque com Pulso)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* QUICK TEMPLATES */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">
+                      Sugestões Rápidas de Modelos:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { title: '🎉 Bónus 100% de Depósito', msg: 'Deposite hoje via Multicaixa ou PIX e ganhe 100% de saldo extra!', view: 'HOME' as ViewState },
+                        { title: '🚀 Torneio Aviator ao Vivo', msg: 'O jackpot da semana do Aviator atingiu 500.000 Kz! Aposte agora.', view: 'AVIATOR' as ViewState },
+                        { title: '💎 Minas com Multiplicador 50x', msg: 'Abra as minas de diamantes e fature alto com segurança!', view: 'MINES' as ViewState },
+                        { title: '⚠️ Manutenção Programada', msg: 'A plataforma passará por melhorias hoje às 03:00. Duração: 15 min.', view: 'HOME' as ViewState },
+                        { title: '💰 Seu Saque foi Aprovado!', msg: 'O seu pedido de levantamento foi processado com sucesso!', view: 'TRANSACTION_STATUS' as ViewState }
+                      ].map((tmpl, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            soundService.playTick();
+                            setNotifTitle(tmpl.title);
+                            setNotifMessage(tmpl.msg);
+                            setNotifActionView(tmpl.view);
+                          }}
+                          className="px-2.5 py-1 bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg text-[10px] font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          {tmpl.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. TITLE & MESSAGE */}
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black uppercase text-slate-300 block">
+                        3. Título da Notificação
+                      </label>
+                      <input
+                        type="text"
+                        value={notifTitle}
+                        onChange={(e) => setNotifTitle(e.target.value)}
+                        placeholder="Ex: 🎉 Bónus Especial de Recarga"
+                        className="w-full bg-[#0e1622] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-[#049444]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black uppercase text-slate-300 block">
+                        4. Mensagem Detalhada
+                      </label>
+                      <textarea
+                        value={notifMessage}
+                        onChange={(e) => setNotifMessage(e.target.value)}
+                        rows={3}
+                        placeholder="Escreva a mensagem clara para o(s) jogador(es)..."
+                        className="w-full bg-[#0e1622] border border-white/10 rounded-xl p-3 text-xs text-slate-200 outline-none focus:border-[#049444] resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 5. AUDIO VOICE RECORDING (WhatsApp Style) */}
+                  <div className="p-4 bg-black/40 border border-emerald-500/30 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Mic className="w-4 h-4 text-emerald-400" />
+                        <label className="text-[11px] font-black uppercase text-emerald-400">
+                          5. Nota de Áudio de Voz Oficial (Estilo WhatsApp)
+                        </label>
+                      </div>
+                      {notifAudioUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotifAudioUrl(null);
+                            setNotifAudioDuration(0);
+                            soundService.playTick();
+                          }}
+                          className="text-[10px] text-red-400 hover:underline uppercase font-bold"
+                        >
+                          Remover Áudio
+                        </button>
+                      )}
+                    </div>
+
+                    {notifAudioUrl ? (
+                      <div className="space-y-2">
+                        <AudioVoicePlayer
+                          audioUrl={notifAudioUrl}
+                          duration={notifAudioDuration}
+                          senderName="Administrador"
+                        />
+                        <p className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          <span>Áudio gravado pronto para ser enviado com a notificação!</span>
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3">
+                        <AudioVoiceRecorder
+                          onAudioRecorded={(url, dur) => {
+                            setNotifAudioUrl(url);
+                            setNotifAudioDuration(dur);
+                          }}
+                        />
+                        <p className="text-[10px] text-slate-400 max-w-xs">
+                          Grave uma mensagem falada de até 2 minutos para dar um toque humano e VIP ao jogador.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 6. CALL TO ACTION (CTA LINK) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400 block">
+                        Destino da Ação (Tela do Jogo)
+                      </label>
+                      <select
+                        value={notifActionView}
+                        onChange={(e) => setNotifActionView(e.target.value as any)}
+                        className="w-full bg-[#0e1622] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none focus:border-amber-400"
+                      >
+                        <option value="">Sem Botão de Redirecionamento</option>
+                        <option value="AVIATOR">🚀 Jogo Aviator</option>
+                        <option value="MINES">💣 Jogo Minas</option>
+                        <option value="PLINKO">⚡ Jogo Plinko</option>
+                        <option value="SLOTS">🎰 Casino Slots</option>
+                        <option value="ROULETTE">🎡 Roleta Europeia</option>
+                        <option value="PROMOTIONS">🎁 Aba Promoções</option>
+                        <option value="P2P">💱 Mercado P2P Kwanza</option>
+                        <option value="PDF_MARKET">📚 E-Books & Estratégias</option>
+                        <option value="PROFILE">👤 Meu Perfil</option>
+                        <option value="TRANSACTION_STATUS">📜 Histórico de Transações</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400 block">
+                        Texto do Botão CTA
+                      </label>
+                      <input
+                        type="text"
+                        value={notifActionText}
+                        onChange={(e) => setNotifActionText(e.target.value)}
+                        placeholder="Ex: Jogar Agora / Aproveitar"
+                        className="w-full bg-[#0e1622] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* DISPATCH BUTTON */}
+                  <div className="pt-3 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={handleSendNotification}
+                      disabled={isSendingNotif}
+                      className={`w-full py-4 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 shadow-2xl transition-all cursor-pointer ${
+                        notifTarget === 'ALL'
+                          ? 'bg-gradient-to-r from-[#049444] via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/30'
+                          : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
+                      }`}
+                    >
+                      <Send className={`w-4 h-4 ${isSendingNotif ? 'animate-spin' : ''}`} />
+                      <span>
+                        {isSendingNotif
+                          ? 'A Disparar Notificação...'
+                          : notifTarget === 'ALL'
+                          ? `Disparar Notificação para TODOS (${users.length} Jogadores)`
+                          : `Enviar Notificação Direta para ${selectedTargetUser ? selectedTargetUser.name : 'Jogador'}`}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* RIGHT: SENT NOTIFICATIONS ARCHIVE (5 Cols) */}
+                <div className="xl:col-span-5 bg-[#090e17] p-6 rounded-3xl border border-white/10 shadow-2xl flex flex-col space-y-4">
+                  <div className="border-b border-white/10 pb-3 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-black uppercase text-white flex items-center gap-2">
+                        <Megaphone className="w-4 h-4 text-amber-400" />
+                        <span>Notificações Enviadas ({notifications.length})</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-400">Histórico de comunicados e leituras</p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
+                        <button
+                          onClick={() => setNotifFilterTab('ALL')}
+                          className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
+                            notifFilterTab === 'ALL' ? 'bg-[#049444] text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Todas
+                        </button>
+                        <button
+                          onClick={() => setNotifFilterTab('BROADCAST')}
+                          className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
+                            notifFilterTab === 'BROADCAST' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Coletivas
+                        </button>
+                        <button
+                          onClick={() => setNotifFilterTab('INDIVIDUAL')}
+                          className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${
+                            notifFilterTab === 'INDIVIDUAL' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Individuais
+                        </button>
+                      </div>
+
+                      {notifications.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleDeleteAllFilteredNotifs}
+                          className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-xl text-[9px] font-black uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Eliminar todas as notificações desta lista"
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                          <span>Limpar</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 max-h-[600px]">
+                    {notifications
+                      .filter(n => {
+                        if (notifFilterTab === 'BROADCAST') return n.target === 'ALL';
+                        if (notifFilterTab === 'INDIVIDUAL') return n.target !== 'ALL';
+                        return true;
+                      })
+                      .length === 0 ? (
+                      <div className="py-16 text-center text-slate-500">
+                        <Bell className="w-8 h-8 mx-auto opacity-30 mb-2" />
+                        <p className="text-xs font-bold">Nenhuma notificação encontrada neste filtro.</p>
+                      </div>
+                    ) : (
+                      notifications
+                        .filter(n => {
+                          if (notifFilterTab === 'BROADCAST') return n.target === 'ALL';
+                          if (notifFilterTab === 'INDIVIDUAL') return n.target !== 'ALL';
+                          return true;
+                        })
+                        .map(n => {
+                          const isIndividual = n.target !== 'ALL';
+                          return (
+                            <div
+                              key={n.id}
+                              className="p-4 bg-white/5 hover:bg-white/[0.08] border border-white/10 rounded-2xl space-y-2.5 transition-all relative group"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                                    n.type === 'BONUS' ? 'bg-emerald-500/20 text-emerald-300' :
+                                    n.type === 'PROMO' ? 'bg-amber-500/20 text-amber-300' :
+                                    n.type === 'ALERT' ? 'bg-red-500/20 text-red-300' :
+                                    n.type === 'FINANCE' ? 'bg-yellow-500/20 text-yellow-300' :
+                                    'bg-blue-500/20 text-blue-300'
+                                  }`}>
+                                    {n.type}
+                                  </span>
+
+                                  {isIndividual ? (
+                                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 flex items-center gap-1">
+                                      <Users className="w-2.5 h-2.5" />
+                                      <span>Para: {n.targetUserName || n.targetUserId?.substring(0, 8)}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center gap-1">
+                                      <Megaphone className="w-2.5 h-2.5 text-amber-400" />
+                                      <span>Todos os Jogadores</span>
+                                    </span>
+                                  )}
+
+                                  {n.priority === 'URGENT' && (
+                                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-500 text-white animate-pulse">
+                                      ⚡ Urgente
+                                    </span>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteNotification(n.id)}
+                                  className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all cursor-pointer"
+                                  title="Eliminar Notificação"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div>
+                                <h5 className="text-xs font-black text-white">{n.title}</h5>
+                                <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2 mt-0.5">
+                                  {n.message}
+                                </p>
+                              </div>
+
+                              {/* Audio preview if present */}
+                              {n.audioUrl && (
+                                <div className="pt-1">
+                                  <AudioVoicePlayer
+                                    audioUrl={n.audioUrl}
+                                    duration={n.audioDuration}
+                                    senderName="Admin"
+                                  />
+                                </div>
+                              )}
+
+                              <div className="pt-1 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-500">
+                                <span>{getRelativeTime(n.createdAt)}</span>
+                                <span className="text-emerald-400 font-bold">
+                                  👁️ {(n.readBy || []).length} leituras
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+
               </div>
 
             </div>
