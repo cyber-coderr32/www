@@ -828,7 +828,7 @@ const App: React.FC = () => {
       case 'PRODUCT_MANAGER': return <ProfileView balance={activeBalance} user={viewingUser || user!} currentUser={user} isDemo={isDemo} onToggleDemo={setIsDemo} onUpdateBalance={updateBalance} onBack={() => { setViewingUser(null); setView('HOME'); }} onLogout={() => authService.logout()} onUpdateUser={handleUpdateProfile} onSelectGame={handleSelectGame} initialTab="PRODUCTS" viewingUser={viewingUser} />;
       
       // Real Games
-      case 'LIMBO': return <LimboView balance={activeBalance} onUpdateBalance={updateBalance} onBack={() => setView('HOME')} />;
+      case 'LIMBO': return <LimboView balance={activeBalance} isDemo={isDemo} onUpdateBalance={updateBalance} onBack={() => setView('HOME')} />;
       case 'POKE_CHOMP':
       case 'CRASH': return <CrashView balance={activeBalance} isDemo={isDemo} onUpdateBalance={updateBalance} onBack={() => setView('HOME')} />;
       case 'WHEEL': return <WheelView balance={activeBalance} onUpdateBalance={updateBalance} onBack={() => setView('HOME')} />;

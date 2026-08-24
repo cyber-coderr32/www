@@ -130,6 +130,24 @@ class CaktoService {
     };
   }
 
+  public async createDeposit(payload: { user_id: string; amount: number; currency?: string; payment_method?: string; customer_name?: string; customer_email?: string; pix_key?: string }): Promise<any> {
+    const res = await this.fetchJsonSafely('/api/deposit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.data;
+  }
+
+  public async requestWithdraw(payload: { user_id: string; amount: number; pix_key: string; currency?: string }): Promise<any> {
+    const res = await this.fetchJsonSafely('/api/withdraw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.data;
+  }
+
   public async getWebhookLogs(): Promise<{ status: string; logs: any[] }> {
     const res = await this.fetchJsonSafely('/api/cakto/webhook-logs');
     if (res.ok && res.data) {

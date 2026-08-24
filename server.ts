@@ -655,7 +655,7 @@ async function startServer() {
   app.get("/api/cakto/status", (req, res) => {
     loadDynamicEnv();
     const clientId = process.env.CAKTO_CLIENT_ID || process.env.CAKTO_ID;
-    const clientSecret = process.env.CAKTO_CLIENT_SECRET || process.env.CAKTO_SECRET_KEY || process.env.CAKTO_API_TOKEN || process.env.CAKTO_TOKEN;
+    const clientSecret = process.env.CAKTO_API_KEY || process.env.CAKTO_KEY || process.env.CAKTO_CLIENT_SECRET || process.env.CAKTO_SECRET_KEY || process.env.CAKTO_API_TOKEN || process.env.CAKTO_TOKEN;
     const webhookSecret = process.env.CAKTO_WEBHOOK_SECRET;
 
     if (!clientSecret && !clientId) {
@@ -668,7 +668,7 @@ async function startServer() {
     if (!clientId && clientSecret && !clientSecret.startsWith("eyJ")) {
       return res.json({
         configured: true,
-        message: "⚠️ Chave Secreta detectada sem Client ID no .env. Se for a Chave de Webhook, lembre-se que ela serve apenas para receber notificações, não para gerar PIX!"
+        message: "Chave de API Cakto detectada (.env)! Modo Direto / Webhook ativo."
       });
     }
 
@@ -690,7 +690,7 @@ async function startServer() {
     }
 
     const id = clientId || process.env.CAKTO_API_CLIENT_ID || process.env.CAKTO_CLIENT_ID || process.env.CAKTO_ID;
-    const secret = clientSecret || process.env.CAKTO_API_CLIENT_SECRET || process.env.CAKTO_CLIENT_SECRET || process.env.CAKTO_SECRET_KEY || process.env.CAKTO_API_TOKEN || process.env.CAKTO_TOKEN || process.env.CAKTO_ACCESS_TOKEN || process.env.CAKTO_KEY || apiToken;
+    const secret = clientSecret || process.env.CAKTO_API_KEY || process.env.CAKTO_KEY || process.env.CAKTO_API_CLIENT_SECRET || process.env.CAKTO_CLIENT_SECRET || process.env.CAKTO_SECRET_KEY || process.env.CAKTO_API_TOKEN || process.env.CAKTO_TOKEN || process.env.CAKTO_ACCESS_TOKEN || apiToken;
     
     // If we only have a JWT access token or direct token, use it if id is not set
     if (secret && (secret.startsWith("eyJ") || !id)) {
@@ -1218,8 +1218,8 @@ async function startServer() {
   });
 
   // Rota Oficial de Webhook Cakto Pay (Recebimento automático de pagamentos PIX / Checkout)
-  // Aceita TODOS OS MÉTODOS HTTP (GET, POST, PUT, OPTIONS) e com/sem barra final para evitar erro 404
-  app.all(["/api/cakto/webhook", "/api/cakto/webhook/"], async (req, res) => {
+  // Aceita TODOS OS MÉTODOS HTTP (GET, POST, PUT, OPTIONS) e rotas /api/cakto/webhook e /api/webhooks/cakto
+  app.all(["/api/cakto/webhook", "/api/cakto/webhook/", "/api/webhooks/cakto", "/api/webhooks/cakto/"], async (req, res) => {
     try {
       loadDynamicEnv();
       const method = req.method;
@@ -1227,15 +1227,15 @@ async function startServer() {
         return res.status(204).send("");
       }
 
-      // 4.3. Depurar o formato exato do payload: log todos os headers e o body na primeira rodada
-      console.log("HEADERS:", JSON.stringify(req.headers));
-      console.log("BODY:", JSON.stringify(req.body));
+      // Depurar o formato exato do payload
+      console.log("[Cakto Webhook] HEADERS:", JSON.stringify(req.headers));
+      console.log("[Cakto Webhook] BODY:", JSON.stringify(req.body));
 
       const payload = Object.keys(req.body || {}).length > 0 ? req.body : (req.query || {});
       const signature = req.headers["x-cakto-signature"] || req.headers["x-signature"] || req.headers["x-cakto-token"] || req.headers["authorization"] || req.query.token || req.query.secret || "";
       const configuredSecret = process.env.CAKTO_WEBHOOK_SECRET;
 
-      // 2. Valida a autenticidade do evento se o secret estiver configurado
+      // Valida a autenticidade do evento se o secret estiver configurado
       if (configuredSecret) {
         const receivedSecret = 
           payload.secret || 
@@ -1365,7 +1365,7 @@ async function startServer() {
       // Adiciona ao registro persistente de logs para exibição no painel Admin
       addWebhookLog({
         method: method,
-        url: req.originalUrl || "/api/cakto/webhook",
+        url: req.originalUrl || "/api/webhooks/cakto",
         status: String(status),
         txId: String(txId),
         amount: Number(amount) || 0,
@@ -1379,7 +1379,7 @@ async function startServer() {
       console.warn("[Cakto Webhook Exceção]", err.message);
       addWebhookLog({
         method: req.method,
-        url: "/api/cakto/webhook",
+        url: "/api/webhooks/cakto",
         status: "erro_processamento",
         txId: "erro",
         amount: 0,
@@ -1387,6 +1387,132 @@ async function startServer() {
         payload: req.body || {}
       });
       return res.status(200).json({ received: true, status: "ok", error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // UNIVERSAL ENDPOINTS: /api/deposit & /api/withdraw
+  // Segue rigorosamente o fluxo de integração padrão de Casas de Apostas
+  // =========================================================================
+  app.post("/api/deposit", async (req, res) => {
+    try {
+      const { user_id, userId, amount, currency = "BRL", payment_method = "pix", customer_name, customer_email, pix_key } = req.body || {};
+      const targetUserId = user_id || userId;
+      const paymentMethod = (payment_method || "pix").toLowerCase();
+
+      if (paymentMethod === "pix" || paymentMethod === "cakto") {
+        // Redireciona internamente para o pipeline oficial da Cakto PIX
+        const amountBrl = currency === "BRL" ? Number(amount) : Number(amount) * 5.85;
+        const amountUsdt = currency === "USDT" || currency === "USD" ? Number(amount) : Number(amount) / 5.85;
+
+        // Executa geração de cobrança PIX
+        const txId = 'DEP_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        const basePayload = `00020126580014br.gov.bcb.pix0136${pix_key || process.env.CAKTO_PIX_KEY || 'pix@cryptonbet.com'}5204000053039865405${amountBrl.toFixed(2)}5802BR5915CRYPTONBET6007MARILIA62070503***6304`;
+        const crc = generateEmvCrc16(basePayload);
+        const pixCopyPaste = basePayload + crc;
+
+        const orderData = {
+          id: txId,
+          user_id: targetUserId,
+          userId: targetUserId,
+          amount: amountBrl,
+          amountUsdt: amountUsdt,
+          currency: currency,
+          payment_method: paymentMethod,
+          status: "pending",
+          cakto_order_id: txId,
+          created_at: new Date().toISOString()
+        };
+
+        const adminDb = getAdminDb();
+        if (adminDb) {
+          await adminDb.collection("orders").doc(txId).set({
+            ...orderData,
+            customerName: customer_name || "Jogador",
+            customerEmail: customer_email || "",
+            createdAt: FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+
+        return res.status(201).json({
+          status: "success",
+          order_id: txId,
+          payment_url: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixCopyPaste)}`,
+          qr_code: pixCopyPaste,
+          qr_code_url: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(pixCopyPaste)}`,
+          amount: amountBrl,
+          currency: "BRL"
+        });
+      }
+
+      return res.status(400).json({ status: "error", message: "Método de pagamento não suportado em /api/deposit." });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  app.post("/api/withdraw", async (req, res) => {
+    try {
+      const { user_id, userId, amount, pix_key, currency = "BRL" } = req.body || {};
+      const targetUserId = user_id || userId;
+      const withdrawAmount = Number(amount);
+
+      if (!targetUserId || withdrawAmount <= 0) {
+        return res.status(400).json({ status: "error", message: "user_id e amount válidos são obrigatórios." });
+      }
+
+      const adminDb = getAdminDb();
+      if (adminDb) {
+        const userRef = adminDb.collection("users").doc(String(targetUserId));
+        const userSnap = await userRef.get();
+
+        if (!userSnap.exists) {
+          return res.status(404).json({ status: "error", message: "Usuário não encontrado." });
+        }
+
+        const userData = userSnap.data() || {};
+        const currentBalance = Number(userData.balance || 0);
+
+        if (currentBalance < withdrawAmount) {
+          return res.status(400).json({ status: "error", message: "Saldo insuficiente para saque." });
+        }
+
+        // Deduz saldo e cria transação pendente
+        const newBalance = currentBalance - withdrawAmount;
+        await userRef.update({
+          balance: newBalance,
+          updatedAt: FieldValue.serverTimestamp()
+        });
+
+        const txId = "OUT_" + Date.now();
+        await adminDb.collection("transactions").doc(txId).set({
+          id: txId,
+          userId: targetUserId,
+          userName: userData.name || userData.displayName || "Jogador",
+          type: "WITHDRAW",
+          amount: withdrawAmount,
+          method: `PIX (${pix_key || 'Chave PIX'})`,
+          status: "PENDING",
+          pixKey: pix_key || "",
+          timestamp: new Date().toLocaleString("pt-PT"),
+          createdAt: FieldValue.serverTimestamp()
+        });
+
+        return res.json({
+          status: "success",
+          message: "Pedido de saque recebido e registrado com sucesso!",
+          transaction_id: txId,
+          new_balance: newBalance
+        });
+      }
+
+      return res.json({
+        status: "success",
+        message: "Saque registrado em modo Sandbox.",
+        transaction_id: "OUT_SIM_" + Date.now()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", message: err.message });
     }
   });
   const ai = GEMINI_API_KEY ? new GoogleGenAI({
