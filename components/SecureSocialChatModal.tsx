@@ -98,14 +98,62 @@ interface SecureSocialChatModalProps {
   onStatusAction?: (actionType: 'MARK_PAID' | 'RELEASE_ESCROW' | 'DISPUTE') => void;
 }
 
-// Suspicious off-platform keywords for anti-fraud detection
-const SUSPICIOUS_KEYWORDS = [
-  'whatsapp', 'zap', 'telegram', 'telegran', 'por fora', 'sem escrow', 
-  'manda no privado', 'chama no zap', 'chama no whats', 'sem intermediario', 
-  'sem intermediário', 'me liga', 'envia o codigo', 'envia o código', 
-  'codigo sms', 'código sms', 'senha', 'chave de seguranca', 'chave privada',
-  'pix direto sem ordem', 'deposito por fora', 'cancela a ordem e faz por fora'
+// Off-platform detection patterns (Strict In-App Enforcement)
+const OFF_PLATFORM_KEYWORDS = [
+  'whatsapp', 'whats', 'zap', 'zapzap', 'wpp', 'telegram', 'telegran', 't.me', 'wa.me',
+  'signal', 'discord', 'viber', 'skype', 'instagram', 'facebook',
+  'por fora', 'fora do app', 'fora da plataforma', 'sem escrow', 'sem intermediario', 
+  'sem intermediário', 'manda no privado', 'chama no zap', 'chama no whats', 'chama no telegram',
+  'chama lá', 'chama la', 'me liga', 'meu contato', 'meu contacto', 'meu numero', 'meu número',
+  'teu contato', 'teu contacto', 'teu numero', 'teu número', 'passa o zap', 'passa o numero',
+  'passa o número', 'pagar por fora', 'transferir por fora', 'pix direto sem ordem',
+  'deposito por fora', 'depósito por fora', 'cancela a ordem e faz por fora',
+  'codigo sms', 'código sms', 'senha', 'chave de seguranca', 'chave privada'
 ];
+
+export const checkOffPlatformAttempt = (text: string): { isOffPlatform: boolean; reason?: string } => {
+  const clean = text.toLowerCase();
+
+  // 1. Check for URL patterns
+  const urlPattern = /(https?:\/\/|www\.|wa\.me\/|t\.me\/|[a-z0-9-]+\.(com|org|net|io|ao|br|pt|me|app)\b)/i;
+  if (urlPattern.test(clean)) {
+    return {
+      isOffPlatform: true,
+      reason: 'O envio de links externos não é permitido.'
+    };
+  }
+
+  // 2. Check for Email patterns
+  const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+  if (emailPattern.test(clean)) {
+    return {
+      isOffPlatform: true,
+      reason: 'O compartilhamento de emails não é permitido.'
+    };
+  }
+
+  // 3. Check for phone numbers (7 or more contiguous or space-separated digits)
+  const phonePattern = /(?:\+?\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3}[\s-]?\d{3,4}[\s-]?\d{0,4}/;
+  const digitsOnly = clean.replace(/\D/g, '');
+  if (digitsOnly.length >= 8 && phonePattern.test(clean)) {
+    return {
+      isOffPlatform: true,
+      reason: 'O compartilhamento de números de telefone/telemóvel não é permitido.'
+    };
+  }
+
+  // 4. Check for off-platform keywords
+  for (const keyword of OFF_PLATFORM_KEYWORDS) {
+    if (clean.includes(keyword)) {
+      return {
+        isOffPlatform: true,
+        reason: 'Mensagem contém menções ou termos não permitidos.'
+      };
+    }
+  }
+
+  return { isOffPlatform: false };
+};
 
 export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
   isOpen,
@@ -200,10 +248,21 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
     }, 4000);
   };
 
-  // Send text message (Stealth protection: messages are delivered seamlessly)
+  // Send text message (Strict In-App Enforcement)
   const handleSendMessage = (textToSend?: string) => {
     const content = (textToSend !== undefined ? textToSend : inputText).trim();
     if (!content) return;
+
+    // Check for off-platform attempt
+    const offPlatformCheck = checkOffPlatformAttempt(content);
+    if (offPlatformCheck.isOffPlatform) {
+      soundService.playCrash();
+      showFeedback(
+        offPlatformCheck.reason || 'Todas as conversas e negociações devem ser feitas exclusivamente dentro do app CryptonBet.',
+        'error'
+      );
+      return;
+    }
 
     soundService.playUISelect();
 
@@ -326,13 +385,25 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
 
   // Save edited message
   const handleSaveEdit = (id: string) => {
-    if (!editingMsgText.trim()) return;
+    const text = editingMsgText.trim();
+    if (!text) return;
+
+    const offPlatformCheck = checkOffPlatformAttempt(text);
+    if (offPlatformCheck.isOffPlatform) {
+      soundService.playCrash();
+      showFeedback(
+        offPlatformCheck.reason || 'Todas as conversas e negociações devem ser feitas exclusivamente dentro do app CryptonBet.',
+        'error'
+      );
+      return;
+    }
+
     soundService.playUISelect();
     const updated = messages.map(m => {
       if (m.id === id) {
         return {
           ...m,
-          text: editingMsgText.trim(),
+          text,
           isEdited: true
         };
       }
@@ -438,31 +509,13 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
             </div>
           </div>
 
-          {/* Social Chat Actions: Calls, Options, Close */}
+          {/* Social Chat Actions: In-App Badge, Denunciar, Fechar */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Phone Call Simulation */}
-            <button
-              onClick={() => {
-                soundService.playUISelect();
-                showFeedback(`A estabelecer chamada de voz com ${partner.name}...`, 'success');
-              }}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
-              title="Chamada de Voz"
-            >
-              <Phone className="w-4 h-4" />
-            </button>
-
-            {/* Video Call Simulation */}
-            <button
-              onClick={() => {
-                soundService.playUISelect();
-                showFeedback(`A iniciar chamada de vídeo com ${partner.name}...`, 'success');
-              }}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
-              title="Chamada de Vídeo"
-            >
-              <Video className="w-4 h-4" />
-            </button>
+            {/* Safe In-App Badge */}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[10px] font-black uppercase text-emerald-400">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>100% no App</span>
+            </div>
 
             {/* Denunciar */}
             <button
@@ -951,19 +1004,19 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL: REPORT FRAUD / DENUNCIAR FRAUDE                                    */}
+      {/* MODAL: REPORT USER / DENUNCIAR UTILIZADOR                                 */}
       {/* ========================================================================= */}
       {isReportModalOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-150">
-          <div className="bg-[#131d27] border border-red-500/40 rounded-[2.5rem] p-6 max-w-md w-full space-y-4 shadow-2xl">
+          <div className="bg-[#131d27] border border-white/15 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400">
                   <Flag className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-white uppercase">Denunciar Suspeita de Fraude</h3>
-                  <p className="text-[10px] text-slate-400">Auditoria Urgente contra {partner.name}</p>
+                  <h3 className="text-sm font-black text-white">Denunciar Utilizador</h3>
+                  <p className="text-[10px] text-slate-400">{partner.name}</p>
                 </div>
               </div>
               <button onClick={() => setIsReportModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
@@ -973,16 +1026,16 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
 
             <div className="space-y-3">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                Selecione ou Descreva o Motivo:
+                Selecione o motivo:
               </label>
 
               <div className="grid grid-cols-1 gap-2">
                 {[
-                  'Pediu para negociar por fora (WhatsApp / Telegram)',
-                  'Pediu para cancelar a ordem após suposto pagamento',
-                  'Comprovativo bancário falso / adulterado',
-                  'Solicitou senha, código SMS ou dados pessoais',
-                  'Comportamento abusivo ou ameaça'
+                  'Tentativa de desvio ou fraude',
+                  'Não confirmação de pagamento',
+                  'Comprovativo inválido ou ilegível',
+                  'Solicitação de dados confidenciais',
+                  'Comportamento abusivo ou ofensivo'
                 ].map((reason) => (
                   <button
                     key={reason}

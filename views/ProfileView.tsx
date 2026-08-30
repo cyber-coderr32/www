@@ -1392,9 +1392,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                       {user.bio && (
                          <p className="text-white/60 text-[11px] font-medium mt-1 border-l-2 border-[#049444] pl-3 italic max-w-md leading-relaxed">{user.bio}</p>
                       )}
-                      {user.whatsapp && (
-                         <p className="text-[#049444] text-[9px] font-black uppercase tracking-widest mt-1.5 flex items-center gap-1 justify-center lg:justify-start">🟢 WhatsApp: {user.whatsapp}</p>
-                      )}
+                      <p className="text-emerald-400/90 text-[9px] font-black uppercase tracking-widest mt-1.5 flex items-center gap-1 justify-center lg:justify-start">
+                        🛡️ Comunicação & Negociações 100% no App
+                      </p>
                    </div>
 
                    <div className="space-y-1.5 max-w-sm mx-auto lg:mx-0">

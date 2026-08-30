@@ -1849,19 +1849,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
                         className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-xs font-semibold text-white focus:outline-none focus:border-[#049444] resize-none"
                       />
                     </div>
-
-                    {/* WhatsApp */}
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Teu Contacto WhatsApp (Para agilizar trades)</label>
-                      <input
-                        type="text"
-                        value={whatsapp}
-                        onChange={(e) => setWhatsapp(e.target.value)}
-                        placeholder="Ex: +244 923 000 000"
-                        className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm font-semibold text-white focus:outline-none focus:border-[#049444]"
-                      />
-                      <span className="text-[8px] text-slate-500 font-bold block px-2">Será exibido apenas aos parceiros que iniciarem uma negociação contigo.</span>
-                    </div>
                   </div>
 
                   {/* Escrow warning message */}
