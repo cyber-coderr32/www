@@ -98,7 +98,7 @@ const ALL_GAMES: Array<{
   { id: 'BACCARAT', name: 'Baccarat VIP', description: 'Jogo de cartas clássico de alta classe', category: 'Cartas', icon: '👑' },
   { id: 'STAIRS', name: 'Subida de Escadas', description: 'Evite os obstáculos e suba até ao topo', category: 'Estratégia', icon: '🪜' },
   { id: 'POKER', name: 'Poker Texas Hold\'em', description: 'Partidas de poker desafiantes', category: 'Cartas', icon: '♠️' },
-  { id: 'P2P', name: 'Mercado P2P Cripto', description: 'Compra e venda de USDT e moedas crypto', category: 'Mercado', icon: '🔄', popular: true },
+  { id: 'P2P', name: 'Câmbio P2P & Caixas Airtm', description: 'Depósitos, saques rápidos via Multicaixa/BAI/PIX e ganhe como Caixa', category: 'Mercado', icon: '🔄', popular: true, hot: true },
   { id: 'PDF_MARKET', name: 'Mercado de E-books', description: 'Compre e venda produtos digitais e estratégias', category: 'Digital', icon: '📚', popular: true },
   { id: 'PRODUCT_MANAGER', name: 'Gerenciador de Produtos & Vendas', description: 'Veja quanto foi vendido, edite, pause ou elimine seus E-books e Ofertas', category: 'Vendas', icon: '📊', popular: true },
   { id: 'TRANSACTION_STATUS', name: 'Status de Transações (Depósitos & Saques)', description: 'Acompanhe depósitos e saques em tempo real com status de confirmação e sucesso', category: 'Financeiro', icon: '⚡', popular: true },

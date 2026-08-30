@@ -37,6 +37,9 @@ import { db, auth } from '../services/firebase';
 import { soundService } from '../services/soundService';
 import { userService } from '../services/userService';
 import { P2POffer, P2PTrade, UserAccount } from '../types';
+import { AirtmCashierHub } from '../components/AirtmCashierHub';
+import { SecureSocialChatModal } from '../components/SecureSocialChatModal';
+import { Zap, Award, Users } from 'lucide-react';
 
 interface P2PChatMessage {
   id: string;
@@ -56,7 +59,7 @@ interface P2PViewProps {
 }
 
 const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBack }) => {
-  const [activeTab, setActiveTab] = useState<'market' | 'my-offers' | 'my-trades' | 'wallet'>('market');
+  const [activeTab, setActiveTab] = useState<'airtm-cashier' | 'market' | 'my-offers' | 'my-trades' | 'wallet'>('airtm-cashier');
   const [marketType, setMarketType] = useState<'BUY' | 'SELL'>('BUY'); // BUY means buy USDT (showing SELL offers), SELL means sell USDT (showing BUY offers)
 
   // Real DB state
@@ -1066,6 +1069,7 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
               Negociar & Escrow
             </span>
             {[
+              { id: 'airtm-cashier', label: 'Caixas & Airtm P2P', icon: <Award className="w-4 h-4 text-[#FFCC00]" />, badge: '✨ PRO' },
               { id: 'market', label: 'Comprar & Vender', icon: <ArrowUpDown className="w-4 h-4" /> },
               { id: 'my-trades', label: 'Minhas Ordens', icon: <Clock className="w-4 h-4" />, count: trades.filter(t => t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length },
               { id: 'my-offers', label: 'Criar Anúncio', icon: <PlusCircle className="w-4 h-4" /> },
@@ -1084,6 +1088,11 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
                   {tab.icon}
                   <span>{tab.label}</span>
                 </div>
+                {tab.badge && (
+                  <span className="px-2 py-0.5 text-[8px] bg-[#FFCC00] text-black rounded-full font-black">
+                    {tab.badge}
+                  </span>
+                )}
                 {tab.count !== undefined && tab.count > 0 && (
                   <span className="px-2 py-0.5 text-[9px] bg-white text-red-600 rounded-full font-black animate-pulse">
                     {tab.count}
@@ -1109,6 +1118,23 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
 
         {/* MAIN PANEL VIEWPORT */}
         <div className="lg:col-span-9 space-y-6">
+
+          {/* TAB 0: AIRTM CASHIER NETWORK & MATCHING */}
+          {activeTab === 'airtm-cashier' && (
+            <AirtmCashierHub
+              user={user}
+              balance={balance}
+              usdtBalance={usdtBalance}
+              onUpdateBalance={onUpdateBalance}
+              onUpdateUsdtBalance={(newUsdt) => {
+                setUsdtBalance(newUsdt);
+                if (currentUserId === 'guest_user') {
+                  localStorage.setItem('crypton_local_usdt_balance', String(newUsdt));
+                }
+              }}
+              showAlert={showAlert}
+            />
+          )}
 
           {/* TAB 1: P2P MARKET PLACE */}
           {activeTab === 'market' && (
@@ -1655,109 +1681,59 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
                             <div className="mt-2 pt-3 border-t border-white/10">
                               <button
                                 onClick={() => setActiveChatTradeId(activeChatTradeId === trade.id ? null : trade.id)}
-                                className="w-full py-2.5 px-4 bg-gradient-to-r from-emerald-950/80 via-emerald-900/60 to-[#049444]/40 hover:from-emerald-900 hover:to-[#049444] border border-emerald-500/30 rounded-xl flex items-center justify-between text-xs font-black uppercase tracking-wider text-emerald-300 transition-all cursor-pointer shadow-md"
+                                className="w-full py-2.5 px-4 bg-gradient-to-r from-[#1877f2]/90 via-blue-700/80 to-indigo-800 hover:from-blue-600 hover:to-indigo-600 border border-blue-400/40 rounded-xl flex items-center justify-between text-xs font-black uppercase tracking-wider text-white transition-all cursor-pointer shadow-lg shadow-blue-950/50"
                               >
                                 <div className="flex items-center gap-2">
-                                  <MessageSquare className="w-4 h-4 text-emerald-400" />
-                                  <span>💬 Chat Escrow Seguro & Anti-Roubo</span>
+                                  <MessageSquare className="w-4 h-4 text-blue-200" />
+                                  <span>💬 Abrir Chat Social & Escrow Seguro</span>
                                 </div>
-                                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2.5 py-0.5 rounded-full font-mono">
-                                  {p2pChatMessages.filter(m => m.tradeId === trade.id).length} msgs
+                                <span className="bg-white/20 text-white text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold">
+                                  🛡️ Vigilância Ativa
                                 </span>
                               </button>
 
-                              <AnimatePresence>
-                                {activeChatTradeId === trade.id && (
-                                  <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    className="mt-3 bg-[#0b1017] border border-emerald-500/40 rounded-2xl p-4 space-y-3 overflow-hidden shadow-2xl"
-                                  >
-                                    {/* Anti-Scam Security Banner */}
-                                    <div className="bg-emerald-950/70 border border-emerald-500/40 rounded-xl p-3 flex items-start gap-2.5">
-                                      <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 animate-pulse" />
-                                      <div className="text-[10px] space-y-1">
-                                        <span className="font-black uppercase tracking-wider text-emerald-300 block">🔒 SISTEMA ESCROW 100% PROTEGIDO ANTI-ROUBO</span>
-                                        <p className="text-slate-300 font-medium leading-relaxed">
-                                          O valor de <span className="text-[#FFCC00] font-bold">${trade.amount.toFixed(2)} USDT</span> está retido em garantia. NUNCA liberte criptomoedas antes do dinheiro entrar no seu extrato bancário oficial. Todas as mensagens são auditadas pela segurança CryptonBet.
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    {/* Message Stream */}
-                                    <div className="max-h-52 overflow-y-auto space-y-2 p-2.5 bg-black/50 rounded-xl border border-white/5 no-scrollbar">
-                                      {p2pChatMessages.filter(m => m.tradeId === trade.id).length === 0 ? (
-                                        <div className="text-center py-6 text-slate-500 text-[10px] font-bold uppercase">
-                                          Nenhuma mensagem neste trade. Inicie a conversa segura com a outra parte!
-                                        </div>
-                                      ) : (
-                                        p2pChatMessages.filter(m => m.tradeId === trade.id).map((msg) => {
-                                          const isMeMsg = msg.senderId === currentUserId;
-                                          return (
-                                            <div key={msg.id} className={`flex flex-col ${isMeMsg ? 'items-end' : 'items-start'}`}>
-                                              <div className="flex items-center gap-1.5 px-1 mb-0.5">
-                                                <span className="text-[9px] font-extrabold text-slate-400 uppercase">{msg.senderName}</span>
-                                                <span className="text-[8px] font-mono text-slate-600">{msg.createdAt}</span>
-                                              </div>
-                                              <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs font-semibold leading-relaxed ${
-                                                msg.isSystem ? 'bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[10px]' :
-                                                isMeMsg ? 'bg-[#049444] text-white rounded-br-none' : 'bg-white/10 text-slate-200 rounded-bl-none border border-white/10'
-                                              }`}>
-                                                {msg.content}
-                                              </div>
-                                            </div>
-                                          );
-                                        })
-                                      )}
-                                    </div>
-
-                                    {/* Quick Proof Actions */}
-                                    <div className="flex flex-wrap gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSendP2PChat(trade, `📎 Os meus dados para pagamento: ${trade.paymentDetails || 'IBAN/Multicaixa'}`)}
-                                        className="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-slate-300 transition-all cursor-pointer"
-                                      >
-                                        📎 Enviar Dados Bancários
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSendP2PChat(trade, `📸 Comprovativo de pagamento efetuado e anexado! Verifique por favor.`)}
-                                        className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 rounded-lg text-[9px] font-bold text-emerald-300 transition-all cursor-pointer"
-                                      >
-                                        📸 Confirmar Comprovativo
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSendP2PChat(trade, `⚠️ Atenção: Aguardando confirmação no meu extrato bancário oficial.`)}
-                                        className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-lg text-[9px] font-bold text-amber-300 transition-all cursor-pointer"
-                                      >
-                                        ⚠️ Alertar Verificação
-                                      </button>
-                                    </div>
-
-                                    {/* Input box */}
-                                    <div className="flex items-center gap-2 pt-1">
-                                      <input
-                                        type="text"
-                                        value={newP2pChatInput}
-                                        onChange={(e) => setNewP2pChatInput(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSendP2PChat(trade); }}
-                                        placeholder="Escreva uma mensagem no Chat Escrow..."
-                                        className="flex-1 bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400"
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSendP2PChat(trade)}
-                                        className="px-4 py-2 bg-[#049444] hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0"
-                                      >
-                                        Enviar
-                                      </button>
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
+                              {/* SECURE SOCIAL CHAT MODAL WITH FULL FRAUD VIGILANCE */}
+                              {activeChatTradeId === trade.id && (
+                                <SecureSocialChatModal
+                                  isOpen={true}
+                                  onClose={() => setActiveChatTradeId(null)}
+                                  partner={{
+                                    id: trade.buyerId === currentUserId ? trade.sellerId : trade.buyerId,
+                                    name: trade.buyerId === currentUserId ? trade.sellerName : trade.buyerName,
+                                    roleBadge: trade.buyerId === currentUserId ? 'Vendedor P2P' : 'Comprador P2P',
+                                    verified: true,
+                                    rating: 5.0
+                                  }}
+                                  currentUser={{
+                                    id: currentUserId,
+                                    name: user.name || 'Você'
+                                  }}
+                                  tradeContext={{
+                                    tradeId: trade.id,
+                                    type: trade.buyerId === currentUserId ? 'BUY' : 'SELL',
+                                    amountUSDT: trade.amount,
+                                    fiatAmount: trade.totalKZ,
+                                    fiatCurrency: 'AOA',
+                                    paymentMethod: 'Multicaixa / Transferência Bancária',
+                                    paymentDetails: trade.paymentDetails || '',
+                                    status: trade.status,
+                                    buyerName: trade.buyerName,
+                                    sellerName: trade.sellerName
+                                  }}
+                                  onStatusAction={(actionType) => {
+                                    if (actionType === 'MARK_PAID') {
+                                      handleMarkAsPaid(trade.id);
+                                    } else if (actionType === 'RELEASE_ESCROW') {
+                                      handleReleaseEscrow(trade);
+                                    } else if (actionType === 'DISPUTE') {
+                                      handleDisputeTrade(trade.id, 'Disputa aberta via chat seguro');
+                                    }
+                                  }}
+                                  onReportFraud={(partnerId, reason) => {
+                                    handleDisputeTrade(trade.id, `Denúncia de fraude: ${reason}`);
+                                  }}
+                                />
+                              )}
                             </div>
 
                           </div>

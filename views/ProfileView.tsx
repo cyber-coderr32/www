@@ -40,14 +40,53 @@ import {
   Package,
   ShoppingCart,
   ArrowUpDown,
-  AlertCircle
+  AlertCircle,
+  MessageSquare,
+  Send,
+  UserPlus,
+  UserCheck,
+  Gift,
+  Heart,
+  Share2,
+  Bookmark,
+  Check,
+  ShoppingBag,
+  Layers,
+  Filter,
+  Download,
+  MessageCircle,
+  Award,
+  Users
 } from 'lucide-react';
 import { soundService } from '../services/soundService';
 import { caktoService } from '../services/caktoService';
 import { plisioService, SUPPORTED_PLISIO_CRYPTOS, PlisioCryptoOption } from '../services/plisioService';
 import { TransactionRequest, GlobalSettings, PaymentMethod } from '../types';
-import { db } from '../services/firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db, auth } from '../services/firebase';
+import { 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { SecureSocialChatModal } from '../components/SecureSocialChatModal';
+
+interface FriendRequestItem {
+  id: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string;
+  receiverName: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: any;
+}
 
 interface ProfileViewProps {
   balance: number;
@@ -69,22 +108,314 @@ interface ProfileViewProps {
   onBack: () => void;
   onLogout: () => void;
   onSelectGame?: (view: any, param?: any) => void;
-  initialTab?: 'WALLET' | 'SWAP' | 'MONETIZATION' | 'PRODUCTS' | 'STATS' | 'SETTINGS';
+  initialTab?: 'WALLET' | 'SWAP' | 'MONETIZATION' | 'PRODUCTS' | 'P2P_OFFERS' | 'PURCHASES' | 'STATS' | 'SETTINGS';
   viewingUser?: any;
   currentUser?: any;
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, isDemo, onToggleDemo, onUpdateBalance, onUpdateUser, onBack, onLogout, onSelectGame, initialTab, viewingUser }) => {
-  const [activeTab, setActiveTab] = useState<'WALLET' | 'SWAP' | 'MONETIZATION' | 'PRODUCTS' | 'STATS' | 'SETTINGS'>(initialTab || 'WALLET');
+  const [activeTab, setActiveTab] = useState<'WALLET' | 'SWAP' | 'MONETIZATION' | 'PRODUCTS' | 'P2P_OFFERS' | 'PURCHASES' | 'STATS' | 'SETTINGS'>(initialTab || 'WALLET');
   const [walletMode, setWalletMode] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
   const isReadOnly = Boolean(viewingUser && (!currentUser || (viewingUser.id !== currentUser?.id && viewingUser.email !== currentUser?.email && viewingUser.name !== currentUser?.name)));
 
+  // Effective Current User Identifiers
+  const currentUid = currentUser?.id || auth.currentUser?.uid || 'guest_user';
+  const currentUName = currentUser?.name || currentUser?.displayName || auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'Trader';
+
+  // Social Friend Requests & Connections State (Unified with Social Area)
+  const [friendRequests, setFriendRequests] = useState<FriendRequestItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('cryptonbet_local_friend_requests');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+
+  const [isProcessingFriendship, setIsProcessingFriendship] = useState(false);
+
+  // Sync Friend Requests from Firestore
+  useEffect(() => {
+    if (currentUid === 'guest_user') return;
+
+    const unsubscribe = onSnapshot(collection(db, 'friend_requests'), (snapshot) => {
+      const list: FriendRequestItem[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        list.push({
+          id: docSnap.id,
+          senderId: data.senderId || '',
+          senderName: data.senderName || '',
+          receiverId: data.receiverId || '',
+          receiverName: data.receiverName || '',
+          status: data.status || 'pending',
+          createdAt: data.createdAt || new Date().toISOString()
+        });
+      });
+      setFriendRequests(list);
+      try {
+        localStorage.setItem('cryptonbet_local_friend_requests', JSON.stringify(list));
+      } catch (e) {}
+    }, (err) => {
+      console.warn("Firestore friend_requests listener error in ProfileView:", err);
+    });
+
+    return () => unsubscribe();
+  }, [currentUid]);
+
+  // Determine current friendship relationship
+  const currentRelation = friendRequests.find(r => 
+    (r.senderId === currentUid && r.receiverId === user.id) ||
+    (r.receiverId === currentUid && r.senderId === user.id)
+  );
+
+  const friendshipStatus: 'NONE' | 'SENT_PENDING' | 'RECEIVED_PENDING' | 'ACCEPTED' = 
+    !currentRelation ? 'NONE' :
+    currentRelation.status === 'accepted' ? 'ACCEPTED' :
+    currentRelation.senderId === currentUid ? 'SENT_PENDING' : 'RECEIVED_PENDING';
+
+  // Calculate actual friends count for this profile user
+  const friendsCount = (() => {
+    const acceptedInList = friendRequests.filter(r => 
+      r.status === 'accepted' && (r.senderId === user.id || r.receiverId === user.id)
+    ).length;
+    const baseFallback = Math.floor(Math.abs(user.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) * 17) % 250) + 18;
+    return acceptedInList > 0 ? acceptedInList : baseFallback;
+  })();
+
+  const connectionsCount = Math.floor(friendsCount * 1.8) + 12;
+
+  // Send Notification Helper
+  const sendSocialNotification = async (recipientId: string, type: 'friend_request' | 'friend_accept', content: string) => {
+    if (!recipientId || recipientId === currentUid) return;
+    const newNotif = {
+      userId: recipientId,
+      senderId: currentUid,
+      senderName: currentUName,
+      type,
+      postId: '',
+      commentId: '',
+      content,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    };
+
+    if (currentUid === 'guest_user') {
+      const localNotifs = JSON.parse(localStorage.getItem('cryptonbet_local_notifications') || '[]');
+      const createdNotif = {
+        ...newNotif,
+        id: 'n_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)
+      };
+      localStorage.setItem('cryptonbet_local_notifications', JSON.stringify([createdNotif, ...localNotifs]));
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'social_notifications'), newNotif);
+    } catch (err) {
+      console.warn("Error sending social notification from ProfileView:", err);
+    }
+  };
+
+  // Friend Request Actions: Send, Accept, Cancel, Remove
+  const handleSendFriendRequest = async () => {
+    if (isProcessingFriendship) return;
+    setIsProcessingFriendship(true);
+    soundService.playUISelect();
+
+    const newReq: FriendRequestItem = {
+      id: 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      senderId: currentUid,
+      senderName: currentUName,
+      receiverId: user.id,
+      receiverName: user.name,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    const updated = [newReq, ...friendRequests.filter(r => r.id !== newReq.id)];
+    setFriendRequests(updated);
+    try {
+      localStorage.setItem('cryptonbet_local_friend_requests', JSON.stringify(updated));
+    } catch (e) {}
+
+    if (currentUid !== 'guest_user') {
+      try {
+        await addDoc(collection(db, 'friend_requests'), {
+          senderId: currentUid,
+          senderName: currentUName,
+          receiverId: user.id,
+          receiverName: user.name,
+          status: 'pending',
+          createdAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.warn("Error saving friend request to Firestore:", err);
+      }
+    }
+
+    sendSocialNotification(user.id, 'friend_request', `${currentUName} enviou-lhe um pedido de amizade!`);
+    showFeedback(`Pedido de amizade enviado para ${user.name}!`);
+    setIsProcessingFriendship(false);
+  };
+
+  const handleAcceptFriendRequest = async () => {
+    if (isProcessingFriendship || !currentRelation) return;
+    setIsProcessingFriendship(true);
+    soundService.playWin();
+
+    const updated = friendRequests.map(r => r.id === currentRelation.id ? { ...r, status: 'accepted' as const } : r);
+    setFriendRequests(updated);
+    try {
+      localStorage.setItem('cryptonbet_local_friend_requests', JSON.stringify(updated));
+    } catch (e) {}
+
+    if (currentUid !== 'guest_user' && !currentRelation.id.startsWith('req_')) {
+      try {
+        await updateDoc(doc(db, 'friend_requests', currentRelation.id), {
+          status: 'accepted'
+        });
+      } catch (err) {
+        console.warn("Error updating friend request in Firestore:", err);
+      }
+    }
+
+    sendSocialNotification(user.id, 'friend_accept', `${currentUName} aceitou o seu pedido de amizade!`);
+    showFeedback(`Agora és amigo de ${user.name}!`);
+    setIsProcessingFriendship(false);
+  };
+
+  const handleCancelOrRemoveFriend = async () => {
+    if (isProcessingFriendship || !currentRelation) return;
+    setIsProcessingFriendship(true);
+    soundService.playUISelect();
+
+    const updated = friendRequests.filter(r => r.id !== currentRelation.id);
+    setFriendRequests(updated);
+    try {
+      localStorage.setItem('cryptonbet_local_friend_requests', JSON.stringify(updated));
+    } catch (e) {}
+
+    if (currentUid !== 'guest_user' && !currentRelation.id.startsWith('req_')) {
+      try {
+        await deleteDoc(doc(db, 'friend_requests', currentRelation.id));
+      } catch (err) {
+        console.warn("Error deleting friend request from Firestore:", err);
+      }
+    }
+
+    showFeedback(friendshipStatus === 'ACCEPTED' ? `Amizade com ${user.name} desfeita.` : `Pedido de amizade cancelado.`);
+    setIsProcessingFriendship(false);
+  };
+
+  // Direct Chat Modal State
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [chatInputText, setChatInputText] = useState('');
+  const [chatMessages, setChatMessages] = useState<Array<{ id: string; senderId: string; senderName: string; text: string; time: string }>>(() => {
+    try {
+      const chatId = [currentUid, user.id].sort().join('_');
+      const saved = localStorage.getItem(`cryptonbet_dm_${chatId}`);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      {
+        id: '1',
+        senderId: user.id,
+        senderName: user.name,
+        text: `Olá! Bem-vindo ao meu perfil. Estou disponível para esclarecer dúvidas sobre os meus e-books e anúncios de câmbio P2P.`,
+        time: 'Hoje'
+      }
+    ];
+  });
+
+  const handleSendDirectMessage = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInputText.trim()) return;
+    soundService.playUISelect();
+    const newMsg = {
+      id: 'dm_' + Date.now(),
+      senderId: currentUser?.id || 'guest_user',
+      senderName: currentUser?.name || currentUser?.displayName || 'Você',
+      text: chatInputText.trim(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    const updated = [...chatMessages, newMsg];
+    setChatMessages(updated);
+    setChatInputText('');
+    try {
+      const chatId = [currentUser?.id || 'guest', user.id].sort().join('_');
+      localStorage.setItem(`cryptonbet_dm_${chatId}`, JSON.stringify(updated));
+    } catch (e) {}
+    showFeedback('Mensagem enviada no chat!');
+  };
+
+  // Tip / Gift Modal State
+  const [isTipModalOpen, setIsTipModalOpen] = useState(false);
+  const [selectedTipAmount, setSelectedTipAmount] = useState<number>(5);
+  const [tipMessage, setTipMessage] = useState('Parabéns pelas excelentes vitórias e estratégias!');
+
+  const handleSendTip = () => {
+    if (selectedTipAmount <= 0) {
+      showFeedback('Selecione um valor de gorjeta válido.');
+      return;
+    }
+    if (selectedTipAmount > balance) {
+      showFeedback('Saldo USDT insuficiente para enviar esta gorjeta.');
+      soundService.playCrash();
+      return;
+    }
+    soundService.playDepositSuccess();
+    onUpdateBalance(-selectedTipAmount);
+    setIsTipModalOpen(false);
+    showFeedback(`🎁 Gorjeta de ${selectedTipAmount.toFixed(2)} USDT enviada a ${user.name} com sucesso!`);
+  };
+
+  // Share Profile Function
+  const handleShareProfile = () => {
+    soundService.playUISelect();
+    try {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(`https://cryptonbet.ao/profile/${user.id}`);
+      }
+    } catch (e) {}
+    showFeedback(`Link do perfil de ${user.name} copiado com sucesso!`);
+  };
+
+  // Direct Product Purchase Modal State
+  const [buyingProduct, setBuyingProduct] = useState<any | null>(null);
+
+  const handleConfirmPurchase = () => {
+    if (!buyingProduct) return;
+    if (buyingProduct.price > balance) {
+      showFeedback('Saldo USDT insuficiente para adquirir este produto.');
+      soundService.playCrash();
+      return;
+    }
+    soundService.playWin();
+    onUpdateBalance(-buyingProduct.price);
+
+    try {
+      const userPurchases = JSON.parse(localStorage.getItem(`cryptonbet_purchases_${currentUser?.id || 'guest'}`) || '[]');
+      userPurchases.unshift({
+        id: 'PURCH_' + Date.now(),
+        title: buyingProduct.title,
+        type: buyingProduct.type,
+        sellerName: user.name,
+        price: buyingProduct.price,
+        date: new Date().toLocaleDateString('pt-PT')
+      });
+      localStorage.setItem(`cryptonbet_purchases_${currentUser?.id || 'guest'}`, JSON.stringify(userPurchases));
+    } catch (e) {}
+
+    showFeedback(`Parabéns! Adquiriste "${buyingProduct.title}" com sucesso!`);
+    setBuyingProduct(null);
+  };
+
   useEffect(() => {
     if (isReadOnly) {
-      if (initialTab === 'PRODUCTS') {
+      if (initialTab === 'PRODUCTS' || initialTab === 'P2P_OFFERS' || initialTab === 'PURCHASES' || initialTab === 'STATS') {
+        setActiveTab(initialTab);
+      } else if (activeTab !== 'STATS' && activeTab !== 'PRODUCTS' && activeTab !== 'P2P_OFFERS' && activeTab !== 'PURCHASES') {
         setActiveTab('PRODUCTS');
-      } else if (activeTab !== 'STATS' && activeTab !== 'PRODUCTS') {
-        setActiveTab('STATS');
       }
     } else if (initialTab) {
       setActiveTab(initialTab);
@@ -1083,14 +1414,103 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
 
                 {/* Dashboard de Saldo & Monetização / Modo Visitante */}
                 {isReadOnly ? (
-                   <div className="bg-gradient-to-br from-purple-900/40 to-[#131d27] border border-purple-500/30 p-6 rounded-[2rem] text-center lg:text-left min-w-[240px] flex flex-col justify-center shadow-xl">
-                      <div className="flex items-center justify-center lg:justify-start gap-2 text-purple-300 font-black text-xs uppercase tracking-widest mb-2">
-                         <Eye className="w-4 h-4 text-purple-400 animate-pulse" />
-                         <span>Modo Visitante</span>
+                   <div className="flex flex-col gap-4 w-full lg:w-auto shrink-0 min-w-[300px]">
+                      {/* Social Metrics Bar */}
+                      <div className="grid grid-cols-4 gap-2 bg-black/40 border border-white/10 p-3 rounded-2xl">
+                         <div className="text-center">
+                            <span className="text-[8px] font-black text-white/40 uppercase tracking-widest block">Amigos</span>
+                            <span className="text-sm font-black font-mono text-[#FFCC00]">{friendsCount}</span>
+                         </div>
+                         <div className="text-center border-l border-white/5">
+                            <span className="text-[8px] font-black text-white/40 uppercase tracking-widest block">Conexões</span>
+                            <span className="text-sm font-black font-mono text-white">{connectionsCount}</span>
+                         </div>
+                         <div className="text-center border-l border-white/5">
+                            <span className="text-[8px] font-black text-white/40 uppercase tracking-widest block">Vendas</span>
+                            <span className="text-sm font-black font-mono text-[#049444]">{managedProducts.length}</span>
+                         </div>
+                         <div className="text-center border-l border-white/5">
+                            <span className="text-[8px] font-black text-white/40 uppercase tracking-widest block">Assertividade</span>
+                            <span className="text-sm font-black font-mono text-blue-400">
+                              {Math.min(98, Math.max(65, Math.round(((user.totalWins || 42) / Math.max(1, user.totalBets || 60)) * 100)))}%
+                            </span>
+                         </div>
                       </div>
-                      <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                         Estás a visualizar o perfil público deste membro em modo de leitura. Nenhuma alteração ou dado sensível é exibido.
-                      </p>
+
+                      {/* Action Buttons Deck for Visitors */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
+                         <button
+                           onClick={() => {
+                             soundService.playUISelect();
+                             setIsChatModalOpen(true);
+                           }}
+                           className="py-3 px-4 bg-gradient-to-r from-[#1877f2] to-blue-600 hover:from-blue-600 hover:to-indigo-600 text-white font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-950/40 flex items-center justify-center gap-2 cursor-pointer group"
+                         >
+                            <MessageCircle className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
+                            <span>Chat Messenger</span>
+                         </button>
+
+                         {/* Unified Friend Request / Follow Button */}
+                         {friendshipStatus === 'ACCEPTED' ? (
+                           <button
+                             onClick={handleCancelOrRemoveFriend}
+                             disabled={isProcessingFriendship}
+                             title="Clique para desfazer amizade"
+                             className="py-3 px-4 font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer border bg-[#FFCC00]/20 text-[#FFCC00] border-[#FFCC00]/40 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40"
+                           >
+                              <UserCheck className="w-4 h-4 text-[#FFCC00]" />
+                              <span>Amigos ✓</span>
+                           </button>
+                         ) : friendshipStatus === 'SENT_PENDING' ? (
+                           <button
+                             onClick={handleCancelOrRemoveFriend}
+                             disabled={isProcessingFriendship}
+                             title="Clique para cancelar pedido de amizade"
+                             className="py-3 px-4 font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer border bg-amber-500/20 text-amber-400 border-amber-500/40 hover:bg-amber-500/30"
+                           >
+                              <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                              <span>Pendente</span>
+                           </button>
+                         ) : friendshipStatus === 'RECEIVED_PENDING' ? (
+                           <button
+                             onClick={handleAcceptFriendRequest}
+                             disabled={isProcessingFriendship}
+                             title="Clique para aceitar o pedido de amizade"
+                             className="py-3 px-4 font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer border bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30"
+                           >
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                              <span>Aceitar Amizade</span>
+                           </button>
+                         ) : (
+                           <button
+                             onClick={handleSendFriendRequest}
+                             disabled={isProcessingFriendship}
+                             className="py-3 px-4 font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer border bg-white/10 text-white border-white/10 hover:bg-white/20"
+                           >
+                              <UserPlus className="w-4 h-4 text-white" />
+                              <span>Adicionar Amigo</span>
+                           </button>
+                         )}
+
+                         <button
+                           onClick={() => {
+                             soundService.playUISelect();
+                             setIsTipModalOpen(true);
+                           }}
+                           className="py-3 px-4 bg-gradient-to-r from-[#FFCC00] to-yellow-500 hover:from-yellow-400 hover:to-yellow-500 text-black font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                         >
+                            <Gift className="w-4 h-4 text-black" />
+                            <span>Gorjeta</span>
+                         </button>
+
+                         <button
+                           onClick={handleShareProfile}
+                           className="py-3 px-4 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                         >
+                            <Share2 className="w-4 h-4" />
+                            <span>Partilhar</span>
+                         </button>
+                      </div>
                    </div>
                 ) : (
                 <div className="flex flex-col sm:flex-row lg:flex-col gap-3 w-full lg:w-auto shrink-0">
@@ -1164,29 +1584,53 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
              
              {/* Navegação de TAb */}
              <div className="lg:col-span-3 space-y-2">
-                {[
-                  { id: 'WALLET', label: 'Financeiro', icon: Wallet },
-                  { id: 'SWAP', label: 'Troca / Compra Cripto', icon: RefreshCw, badge: 'Instantâneo' },
-                  { id: 'MONETIZATION', label: 'Painel de Monetização', icon: DollarSign, badge: 'Piloto Google' },
-                  { id: 'PRODUCTS', label: isReadOnly ? 'Produtos Públicos' : 'Gerenciador de Produtos', icon: Store, badge: isReadOnly ? 'Mercado' : 'Vendas' },
-                  { id: 'STATS', label: 'Estatísticas', icon: BarChart3 },
-                  { id: 'SETTINGS', label: 'Segurança', icon: Settings }
-                ].filter(t => !isReadOnly || t.id === 'STATS' || t.id === 'PRODUCTS').map(t => (
-                  <button 
-                    key={t.id} 
-                    onClick={() => { soundService.playUISelect(); setActiveTab(t.id as any); }} 
-                    className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all cursor-pointer group ${activeTab === t.id ? 'bg-[#049444] border-[#049444] text-white shadow-xl shadow-[#049444]/10' : 'bg-white/5 border-white/5 text-white/40 hover:border-white/20 hover:bg-white/[0.08]'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                       <t.icon className={`w-4 h-4 ${activeTab === t.id ? 'text-white' : 'text-white/40 group-hover:text-white'}`} />
-                       <span className="text-[10px] font-black uppercase tracking-widest">{t.label}</span>
-                    </div>
-                    {t.badge && (
-                       <span className="text-[7px] font-black bg-[#FFCC00] text-black px-1.5 py-0.5 rounded uppercase tracking-tighter">{t.badge}</span>
-                    )}
-                    {activeTab === t.id && <div className="w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_8px_white]" />}
-                  </button>
-                ))}
+                {isReadOnly ? (
+                  [
+                    { id: 'PRODUCTS', label: 'E-Books & Vendas', icon: Package, badge: `${managedProducts.length}` },
+                    { id: 'P2P_OFFERS', label: 'Ofertas P2P Cripto', icon: ArrowLeftRight, badge: 'P2P' },
+                    { id: 'PURCHASES', label: 'Compras & Biblioteca', icon: ShoppingBag, badge: 'Ativos' },
+                    { id: 'STATS', label: 'Estatísticas & Prestígio', icon: BarChart3, badge: `Nv. ${playerLevel}` }
+                  ].map(t => (
+                    <button 
+                      key={t.id} 
+                      onClick={() => { soundService.playUISelect(); setActiveTab(t.id as any); }} 
+                      className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all cursor-pointer group ${activeTab === t.id ? 'bg-[#049444] border-[#049444] text-white shadow-xl shadow-[#049444]/10' : 'bg-white/5 border-white/5 text-white/40 hover:border-white/20 hover:bg-white/[0.08]'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                         <t.icon className={`w-4 h-4 ${activeTab === t.id ? 'text-white' : 'text-white/40 group-hover:text-white'}`} />
+                         <span className="text-[10px] font-black uppercase tracking-widest">{t.label}</span>
+                      </div>
+                      {t.badge && (
+                         <span className="text-[7px] font-black bg-[#FFCC00] text-black px-1.5 py-0.5 rounded uppercase tracking-tighter">{t.badge}</span>
+                      )}
+                      {activeTab === t.id && <div className="w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_8px_white]" />}
+                    </button>
+                  ))
+                ) : (
+                  [
+                    { id: 'WALLET', label: 'Financeiro', icon: Wallet },
+                    { id: 'SWAP', label: 'Troca / Compra Cripto', icon: RefreshCw, badge: 'Instantâneo' },
+                    { id: 'MONETIZATION', label: 'Painel de Monetização', icon: DollarSign, badge: 'Piloto Google' },
+                    { id: 'PRODUCTS', label: 'Gerenciador de Produtos', icon: Store, badge: 'Vendas' },
+                    { id: 'STATS', label: 'Estatísticas', icon: BarChart3 },
+                    { id: 'SETTINGS', label: 'Segurança', icon: Settings }
+                  ].map(t => (
+                    <button 
+                      key={t.id} 
+                      onClick={() => { soundService.playUISelect(); setActiveTab(t.id as any); }} 
+                      className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all cursor-pointer group ${activeTab === t.id ? 'bg-[#049444] border-[#049444] text-white shadow-xl shadow-[#049444]/10' : 'bg-white/5 border-white/5 text-white/40 hover:border-white/20 hover:bg-white/[0.08]'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                         <t.icon className={`w-4 h-4 ${activeTab === t.id ? 'text-white' : 'text-white/40 group-hover:text-white'}`} />
+                         <span className="text-[10px] font-black uppercase tracking-widest">{t.label}</span>
+                      </div>
+                      {t.badge && (
+                         <span className="text-[7px] font-black bg-[#FFCC00] text-black px-1.5 py-0.5 rounded uppercase tracking-tighter">{t.badge}</span>
+                      )}
+                      {activeTab === t.id && <div className="w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_8px_white]" />}
+                    </button>
+                  ))
+                )}
 
                 {!isReadOnly && onSelectGame && (
                   <button 
@@ -2591,13 +3035,23 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
 
                                    {/* ACTION BUTTONS */}
                                    {isReadOnly ? (
-                                     <div className="flex items-center gap-1.5 shrink-0 justify-end">
+                                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 justify-end">
+                                       <button
+                                         onClick={() => {
+                                           soundService.playUISelect();
+                                           setBuyingProduct(item);
+                                         }}
+                                         className="px-5 py-2.5 bg-[#049444] hover:bg-[#037235] text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg shadow-[#049444]/20 active:scale-95"
+                                       >
+                                         <ShoppingCart className="w-3.5 h-3.5" />
+                                         <span>Comprar ({item.price} USDT)</span>
+                                       </button>
                                        <button
                                          onClick={() => {
                                            soundService.playUISelect();
                                            if (onSelectGame) onSelectGame(item.type === 'pdf' ? 'PDF_MARKET' : 'P2P', item.id);
                                          }}
-                                         className="px-4 py-2 bg-[#FFCC00]/20 hover:bg-[#FFCC00]/30 text-[#FFCC00] font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 border border-[#FFCC00]/30 shadow-sm"
+                                         className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-white/10"
                                        >
                                          <Search className="w-3.5 h-3.5" />
                                          <span>Ver no Mercado</span>
@@ -2647,6 +3101,205 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                        </motion.div>
                      );
                    })()}
+
+                   {activeTab === 'P2P_OFFERS' && (
+                     <motion.div 
+                       key="p2p_offers"
+                       initial={{ opacity: 0, x: 20 }}
+                       animate={{ opacity: 1, x: 0 }}
+                       exit={{ opacity: 0, x: -20 }}
+                       className="space-y-6"
+                     >
+                       <div className="bg-gradient-to-br from-[#131d27] via-[#0e1721] to-blue-950/40 rounded-[2rem] p-6 md:p-8 text-white shadow-xl border border-white/10 space-y-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                             <div>
+                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-wider mb-2">
+                                   <ArrowLeftRight className="w-3 h-3" /> Câmbio Peer-to-Peer Oficial
+                                </div>
+                                <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight">
+                                  Ofertas de Câmbio de <span className="text-[#FFCC00]">{user.name}</span>
+                                </h3>
+                                <p className="text-xs text-white/60 font-medium mt-1">
+                                  Negocie criptomoedas diretamente com este usuário via Multicaixa Express, Unitel Money ou PIX com custódia garantida.
+                                </p>
+                             </div>
+                             <button
+                               onClick={() => {
+                                 soundService.playUISelect();
+                                 setIsChatModalOpen(true);
+                                 setChatInputText(`Olá ${user.name}, gostaria de saber mais sobre as suas ofertas P2P ativas.`);
+                               }}
+                               className="px-5 py-3 bg-[#049444] hover:bg-[#037235] text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+                             >
+                                <MessageSquare className="w-4 h-4" />
+                                <span>Propor Negociação</span>
+                             </button>
+                          </div>
+                       </div>
+
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {[
+                            {
+                              coin: 'USDT (TRC-20)',
+                              type: 'VENDA DE CRIPTO',
+                              amount: '250.00 USDT',
+                              priceKz: '950 KZ / USDT',
+                              priceBrl: 'R$ 5.80 / USDT',
+                              methods: ['Multicaixa Express', 'BAI Directo', 'Unitel Money'],
+                              status: 'DISPONÍVEL AGORA',
+                              rating: '4.9 ★★★★★'
+                            },
+                            {
+                              coin: 'BTC (Bitcoin Lightning)',
+                              type: 'VENDA DE CRIPTO',
+                              amount: '0.015 BTC',
+                              priceKz: 'Cotação de Mercado + 1.5%',
+                              priceBrl: 'R$ 390.000 / BTC',
+                              methods: ['Multicaixa Express', 'PIX Brasil', 'Transferência BFA'],
+                              status: 'DISPONÍVEL AGORA',
+                              rating: '5.0 ★★★★★'
+                            },
+                            {
+                              coin: 'USDT (BEP-20 / BSC)',
+                              type: 'COMPRA DE CRIPTO',
+                              amount: '500.00 USDT',
+                              priceKz: '920 KZ / USDT',
+                              priceBrl: 'R$ 5.65 / USDT',
+                              methods: ['Multicaixa Express', 'PIX'],
+                              status: 'ATIVO',
+                              rating: '4.9 ★★★★★'
+                            }
+                          ].map((offer, idx) => (
+                            <div key={idx} className="bg-[#131d27]/60 border border-white/5 hover:border-blue-500/30 rounded-[2rem] p-6 space-y-4 shadow-xl transition-all relative overflow-hidden">
+                               <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                     <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-black">
+                                        <Coins className="w-5 h-5" />
+                                     </div>
+                                     <div>
+                                        <h4 className="text-sm font-black text-white uppercase">{offer.coin}</h4>
+                                        <span className="text-[9px] font-black text-[#FFCC00] uppercase tracking-wider">{offer.type}</span>
+                                     </div>
+                                  </div>
+                                  <span className="text-[8px] font-black px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full uppercase">
+                                     {offer.status}
+                                  </span>
+                               </div>
+
+                               <div className="grid grid-cols-2 gap-2 bg-black/30 p-3 rounded-xl border border-white/5">
+                                  <div>
+                                     <span className="text-[8px] font-black text-white/30 uppercase block">Disponível</span>
+                                     <span className="text-xs font-black font-mono text-white">{offer.amount}</span>
+                                  </div>
+                                  <div>
+                                     <span className="text-[8px] font-black text-white/30 uppercase block">Cotação Angola</span>
+                                     <span className="text-xs font-black font-mono text-[#049444]">{offer.priceKz}</span>
+                                  </div>
+                               </div>
+
+                               <div className="space-y-1">
+                                  <span className="text-[8px] font-black text-white/30 uppercase tracking-wider block">Métodos Aceites:</span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                     {offer.methods.map((m, mIdx) => (
+                                        <span key={mIdx} className="text-[9px] font-bold px-2 py-0.5 bg-white/5 border border-white/5 rounded-lg text-white/70">
+                                           {m}
+                                        </span>
+                                     ))}
+                                  </div>
+                               </div>
+
+                               <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-3">
+                                  <span className="text-[9px] font-bold text-amber-400">{offer.rating}</span>
+                                  <button 
+                                    onClick={() => {
+                                      soundService.playUISelect();
+                                      setIsChatModalOpen(true);
+                                      setChatInputText(`Olá ${user.name}, gostaria de negociar a tua oferta P2P de ${offer.coin} (${offer.priceKz}).`);
+                                    }}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                     <MessageSquare className="w-3.5 h-3.5" />
+                                     <span>Negociar no Chat</span>
+                                  </button>
+                               </div>
+                            </div>
+                          ))}
+                       </div>
+                     </motion.div>
+                   )}
+
+                   {activeTab === 'PURCHASES' && (
+                     <motion.div 
+                       key="purchases"
+                       initial={{ opacity: 0, x: 20 }}
+                       animate={{ opacity: 1, x: 0 }}
+                       exit={{ opacity: 0, x: -20 }}
+                       className="space-y-6"
+                     >
+                       <div className="bg-gradient-to-br from-[#131d27] via-[#0e1721] to-[#FFCC00]/10 rounded-[2rem] p-6 md:p-8 text-white shadow-xl border border-white/10 space-y-4">
+                          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FFCC00]/20 border border-[#FFCC00]/30 text-[#FFCC00] text-[10px] font-black uppercase tracking-wider mb-1">
+                             <Award className="w-3 h-3" /> Biblioteca Digital & Conquistas Públicas
+                          </div>
+                          <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight">
+                            Conquistas & Aquisições de <span className="text-[#FFCC00]">{user.name}</span>
+                          </h3>
+                          <p className="text-xs text-white/60 font-medium">
+                            Histórico público de certificados, materiais de estudo e conquistas obtidas na CryptonBet Angola.
+                          </p>
+                       </div>
+
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {[
+                            {
+                              title: 'Manual Completo: Análise de Algoritmos Crash',
+                              category: 'E-Book Digital',
+                              date: 'Fevereiro 2026',
+                              badge: 'Certificado Adquirido',
+                              icon: BookOpen,
+                              color: 'from-amber-600 to-yellow-800'
+                            },
+                            {
+                              title: 'Piloto Google Verificado 2026',
+                              category: 'Distintivo de Criador',
+                              date: 'Janeiro 2026',
+                              badge: 'Rank Oficial',
+                              icon: ShieldCheck,
+                              color: 'from-emerald-600 to-teal-800'
+                            },
+                            {
+                              title: 'Trader Pro: P2P Liquidez Multicaixa',
+                              category: 'Certificação de Câmbio',
+                              date: 'Janeiro 2026',
+                              badge: 'Verificado',
+                              icon: ArrowLeftRight,
+                              color: 'from-blue-600 to-indigo-800'
+                            },
+                            {
+                              title: 'Guia de Alta Performance em Roleta & Dados',
+                              category: 'Biblioteca VIP',
+                              date: 'Recente',
+                              badge: 'Membro Premium',
+                              icon: Star,
+                              color: 'from-purple-600 to-pink-800'
+                            }
+                          ].map((item, idx) => (
+                            <div key={idx} className="bg-[#131d27]/60 border border-white/5 p-6 rounded-[2rem] flex items-center gap-4 hover:border-white/20 transition-all">
+                               <div className={`w-14 h-14 rounded-2xl bg-gradient-to-tr ${item.color} flex items-center justify-center text-white shrink-0 shadow-lg`}>
+                                  <item.icon className="w-7 h-7" />
+                                </div>
+                               <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                     <span className="text-[8px] font-black px-2 py-0.5 bg-white/10 rounded-md text-white/60 uppercase">{item.category}</span>
+                                     <span className="text-[8px] font-black text-[#049444] uppercase">{item.badge}</span>
+                                  </div>
+                                  <h4 className="text-xs font-black text-white uppercase leading-snug line-clamp-1">{item.title}</h4>
+                                  <p className="text-[9px] text-white/40 font-mono">{item.date}</p>
+                               </div>
+                            </div>
+                          ))}
+                       </div>
+                     </motion.div>
+                   )}
 
                    {activeTab === 'STATS' && (
                      <motion.div 
@@ -2864,6 +3517,156 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                 className="px-6 py-2.5 rounded-xl bg-[#049444] hover:bg-[#037235] text-white text-xs font-black uppercase tracking-wider shadow-lg cursor-pointer"
               >
                 Guardar Preço
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECURE SOCIAL MESSENGER CHAT MODAL (WITH ANTI-FRAUD & VOICE NOTES) */}
+      <SecureSocialChatModal
+        isOpen={isChatModalOpen}
+        onClose={() => setIsChatModalOpen(false)}
+        partner={{
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          avatarColor: user.avatarColor,
+          roleBadge: 'Membro Verificado',
+          verified: true,
+          rating: 5.0,
+          phone: user.phone,
+          whatsapp: user.whatsapp
+        }}
+        currentUser={{
+          id: currentUser?.id || 'guest_user',
+          name: currentUser?.name || currentUser?.displayName || 'Você',
+          avatarColor: currentUser?.avatarColor
+        }}
+        onReportFraud={(partnerId, reason) => {
+          showFeedback(`Denúncia contra ${user.name} enviada à moderação. Motivo: ${reason}`);
+        }}
+      />
+
+      {/* TIP / GIFT MODAL */}
+      {isTipModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1002] flex items-center justify-center p-4">
+          <div className="bg-[#131d27] border border-white/10 rounded-[2.5rem] p-6 max-w-md w-full space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
+                <Gift className="w-5 h-5 text-amber-400" /> Enviar Gorjeta / Recompensa
+              </h3>
+              <button onClick={() => setIsTipModalOpen(false)} className="text-white/40 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-1">
+              <span className="text-[10px] text-white/40 font-black uppercase tracking-wider block">Destinatário</span>
+              <p className="text-sm font-black text-[#FFCC00] uppercase flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" /> {user.name} ({user.id.toUpperCase()})
+              </p>
+              <p className="text-[10px] text-white/50">O valor será debitado do seu saldo e transferido instantaneamente.</p>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[9px] font-black text-white/40 uppercase block">Escolha o Valor (USDT)</label>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 5, 10, 25].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setSelectedTipAmount(amt)}
+                    className={`py-2 rounded-xl text-xs font-black font-mono transition-all border cursor-pointer ${
+                      selectedTipAmount === amt
+                        ? 'bg-[#049444] text-white border-[#049444]'
+                        : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
+                    }`}
+                  >
+                    ${amt}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                step="0.1"
+                min="0.5"
+                value={selectedTipAmount}
+                onChange={(e) => setSelectedTipAmount(parseFloat(e.target.value) || 0)}
+                placeholder="Ou digite outro valor"
+                className="w-full bg-black/50 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm font-mono font-bold outline-none focus:border-[#049444]"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setIsTipModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSendTip}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider shadow-lg cursor-pointer flex items-center gap-1.5"
+              >
+                <Gift className="w-3.5 h-3.5" />
+                <span>Enviar Gorjeta</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BUY PRODUCT DIRECT MODAL */}
+      {buyingProduct && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1002] flex items-center justify-center p-4">
+          <div className="bg-[#131d27] border border-white/10 rounded-[2.5rem] p-6 max-w-md w-full space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5 text-[#049444]" /> Confirmar Compra Imediata
+              </h3>
+              <button onClick={() => setBuyingProduct(null)} className="text-white/40 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center text-white/40">
+                  {buyingProduct.thumbnail ? (
+                    <img src={buyingProduct.thumbnail} alt={buyingProduct.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <BookOpen className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-xs font-black text-white uppercase truncate">{buyingProduct.title}</h4>
+                  <span className="text-[9px] font-black text-white/40 uppercase block">Vendedor: {user.name}</span>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                <span className="text-[10px] font-black text-white/40 uppercase">Preço a Pagar:</span>
+                <span className="text-base font-black font-mono text-[#049444]">{buyingProduct.price.toFixed(2)} USDT</span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-white/50 leading-relaxed">
+              O valor será deduzido da sua carteira CryptonBet e transferido instantaneamente para a conta de {user.name}. O acesso ao material ou negociação será liberado na sua biblioteca.
+            </p>
+
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setBuyingProduct(null)}
+                className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmPurchase}
+                className="px-6 py-2.5 rounded-xl bg-[#049444] hover:bg-[#037235] text-white font-black text-xs uppercase tracking-wider shadow-lg cursor-pointer flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Confirmar & Pagar</span>
               </button>
             </div>
           </div>

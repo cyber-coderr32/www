@@ -21,7 +21,17 @@ const LOCAL_DELETED_NOTIFS_KEY = 'cryptonbet_deleted_notif_ids';
 export const INITIAL_SYSTEM_NOTIFICATIONS: AppNotification[] = [];
 
 // Legacy sample IDs to automatically purge
-const LEGACY_SAMPLE_IDS = ['notif_welcome_system', 'notif_aviator_promo'];
+const LEGACY_SAMPLE_IDS = [
+  'notif_welcome_system', 
+  'notif_aviator_promo',
+  'notif_sample_1',
+  'notif_sample_2',
+  'notif_sample_3',
+  'notif_example_1',
+  'notif_example_2',
+  'notif_example_3',
+  '1', '2', '3'
+];
 
 export const notificationService = {
   // Retrieve deleted notification IDs to prevent resurrection from snapshot or cache
@@ -52,7 +62,6 @@ export const notificationService = {
 
   // Get all notifications from LocalStorage fallback or initialize
   getLocalNotifications: (): AppNotification[] => {
-    const isInitialized = localStorage.getItem(LOCAL_NOTIFS_INIT_KEY) === 'true';
     const deletedIds = notificationService.getDeletedIds();
 
     try {
@@ -60,21 +69,19 @@ export const notificationService = {
       if (stored !== null) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          return parsed.filter((n: AppNotification) => n && n.id && !deletedIds.has(n.id));
+          const filtered = parsed.filter((n: AppNotification) => n && n.id && !deletedIds.has(n.id) && !n.id.includes('sample') && !n.id.includes('example'));
+          if (filtered.length !== parsed.length) {
+            localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(filtered));
+          }
+          return filtered;
         }
       }
     } catch (e) {
       console.warn('Failed to parse local notifications:', e);
     }
 
-    // Initialize default if never initialized on this browser
-    if (!isInitialized) {
-      localStorage.setItem(LOCAL_NOTIFS_INIT_KEY, 'true');
-      const filteredDefaults = INITIAL_SYSTEM_NOTIFICATIONS.filter(n => !deletedIds.has(n.id));
-      localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(filteredDefaults));
-      return filteredDefaults;
-    }
-
+    localStorage.setItem(LOCAL_NOTIFS_INIT_KEY, 'true');
+    localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify([]));
     return [];
   },
 
@@ -83,7 +90,7 @@ export const notificationService = {
     try {
       localStorage.setItem(LOCAL_NOTIFS_INIT_KEY, 'true');
       const deletedIds = notificationService.getDeletedIds();
-      const filtered = (notifs || []).filter(n => n && n.id && !deletedIds.has(n.id));
+      const filtered = (notifs || []).filter(n => n && n.id && !deletedIds.has(n.id) && !n.id.includes('sample') && !n.id.includes('example'));
       localStorage.setItem(LOCAL_NOTIFS_KEY, JSON.stringify(filtered));
       window.dispatchEvent(new CustomEvent('cryptonbet_notifs_changed', { detail: filtered }));
     } catch (e) {
@@ -318,12 +325,18 @@ export const notificationService = {
           const list: AppNotification[] = [];
           snapshot.forEach(docSnap => {
             const data = docSnap.data() as AppNotification;
-            if (data && data.id && !deletedIds.has(data.id)) {
-              list.push(data);
+            const notifId = data?.id || docSnap.id;
+            if (deletedIds.has(notifId) || notifId.includes('sample') || notifId.includes('example')) {
+              // Proactively delete from Firestore so it doesn't linger
+              try {
+                deleteDoc(doc(db, 'notifications', docSnap.id)).catch(() => {});
+              } catch (e) {}
+            } else if (data && data.title) {
+              list.push({ ...data, id: notifId });
             }
           });
           // Sort newest first
-          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
           notificationService.saveLocalNotifications(list);
           callback(list);
         } else {

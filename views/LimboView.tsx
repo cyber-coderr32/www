@@ -38,55 +38,55 @@ const LimboView: React.FC<LimboViewProps> = ({ balance, isDemo, onUpdateBalance,
     setRoundsPlayed(newRounds);
 
     // =========================================================================
-    // CASINO RETENTION & ENTICEMENT ENGINE (ALICIAMENTO E RETENÇÃO INTELIGENTE)
-    // - Proporciona alta dopamina e engajamento constante com vitórias frequentes
-    // - Proteção contra sequências longas de derrotas (Streak Breaker)
-    // - Near-Misses realistas (90-98% do alvo) que instigam "só mais uma rodada"
-    // - Super multiplicadores visuais quando ganha, estimulando alvos maiores
+    // CASINO 80/20 RETENTION & ENTICEMENT ENGINE (ALICIAMENTO E 80% CASA / 20% JOGADOR)
+    // - Casa retém 80% no volume geral (Taxa de Vitória base ~ 20%)
+    // - Proporciona alta dopamina e engajamento constante com Near-Misses realistas (90-99% do alvo)
+    // - Proteção contra frustração (Streak Breaker após 3 derrotas) para reacender a esperança
+    // - Super multiplicadores visuais ocasionais para despertar o desejo de dobrar a aposta
     // =========================================================================
     const savedSettings = JSON.parse(localStorage.getItem('skyhigh_settings') || '{}');
     const advLevel = savedSettings.houseAdvantageLevel || 'MEDIUM';
     const isBaiting = savedSettings.baitingMode !== false;
 
-    // 1. Base Win Chance adaptada ao alvo para manter o jogador no jogo
-    // Multiplicadores baixos (1.1x - 1.9x) ganham bastante para dar confiança
-    // Multiplicadores médios (2.0x - 5.0x) mantêm ritmo balanceado e viciante
-    let winProb: number;
+    // 1. Base Win Chance calibrada para 80% para a casa (~20% taxa de acerto do jogador)
+    let baseWinProb: number;
     if (targetMultiplier <= 1.3) {
-      winProb = 0.72;
+      baseWinProb = 0.28;
     } else if (targetMultiplier <= 1.8) {
-      winProb = 0.58;
+      baseWinProb = 0.22;
     } else if (targetMultiplier <= 2.2) {
-      winProb = 0.46; // Dobro ganha quase metade das vezes!
+      baseWinProb = 0.20; // 2.0x tem exatamente 20% de chance (80% da casa)
     } else if (targetMultiplier <= 3.5) {
-      winProb = 0.32;
+      baseWinProb = 0.14;
     } else if (targetMultiplier <= 6.0) {
-      winProb = 0.20;
+      baseWinProb = 0.08;
     } else if (targetMultiplier <= 15.0) {
-      winProb = 0.12;
+      baseWinProb = 0.04;
     } else {
-      winProb = 0.05;
+      baseWinProb = 0.02;
     }
 
-    // 2. Anti-Frustration / Hook Mechanism:
-    // Se o usuário perdeu 2 ou mais vezes seguidas, aumentamos a chance para aliciar e reter!
-    if (consecutiveLosses >= 2) {
-      winProb = Math.min(0.85, winProb + 0.25 + (consecutiveLosses * 0.10));
+    let winProb = baseWinProb;
+
+    // 2. Anti-Frustração & Aliciamento Psicológico (Streak Breaker):
+    // Se o usuário teve 3 ou mais derrotas consecutivas, damos esperança e aliciamos
+    if (consecutiveLosses >= 3) {
+      winProb = Math.min(0.45, winProb + 0.18 + (consecutiveLosses * 0.05));
     }
 
-    // 3. Early Session Hook (Primeiras 5 rodadas dão impulso de boas-vindas)
-    if (newRounds <= 4) {
-      winProb = Math.min(0.80, winProb + 0.15);
+    // 3. Early Session Hook (Primeiras 2 rodadas aumentam levemente a taxa para engajar)
+    if (newRounds <= 2) {
+      winProb = Math.min(0.38, winProb + 0.12);
     }
 
-    // 4. Demo Mode Hook
+    // 4. Demo Mode Hook (Aumenta no modo demo para atrair para o modo real)
     if (isDemo && isBaiting) {
-      winProb = Math.min(0.88, winProb + 0.20);
+      winProb = Math.min(0.55, winProb + 0.25);
     }
 
-    // 5. Ajuste fino com base no painel de administração
+    // 5. Ajuste fino do painel administrativo
     if (advLevel === 'EXTREME') winProb *= 0.75;
-    else if (advLevel === 'LOW') winProb = Math.min(0.85, winProb * 1.20);
+    else if (advLevel === 'LOW') winProb = Math.min(0.35, winProb * 1.35);
 
     const roll = Math.random();
     const isWin = roll < winProb;
@@ -94,40 +94,40 @@ const LimboView: React.FC<LimboViewProps> = ({ balance, isDemo, onUpdateBalance,
     let finalResult: number;
 
     if (isWin) {
-      // VITÓRIA ENTUSIASTICA: o foguete passa do alvo e frequentemente explode alto
+      // VITÓRIA ENTUSIASTICA: o foguete ultrapassa o alvo com estilo
       const bonusType = Math.random();
-      if (bonusType < 0.50) {
-        // Vitória justa / moderada (1.03x a 1.25x acima do alvo)
-        finalResult = Number((targetMultiplier * (1.02 + Math.random() * 0.22)).toFixed(2));
-      } else if (bonusType < 0.85) {
-        // Boa vitória (1.30x a 2.50x acima do alvo)
-        finalResult = Number((targetMultiplier * (1.30 + Math.random() * 1.20)).toFixed(2));
+      if (bonusType < 0.60) {
+        // Vitória justa / moderada (1.02x a 1.20x acima do alvo)
+        finalResult = Number((targetMultiplier * (1.02 + Math.random() * 0.18)).toFixed(2));
+      } else if (bonusType < 0.88) {
+        // Boa vitória (1.25x a 2.00x acima do alvo)
+        finalResult = Number((targetMultiplier * (1.25 + Math.random() * 0.75)).toFixed(2));
       } else {
-        // MEGA MULTIPLICADOR (alicia o jogador mostrando 10x, 30x, 100x na tela e histórico!)
-        const megaMultiplier = Math.min(999, targetMultiplier * (3.0 + Math.random() * 15.0));
+        // MEGA MULTIPLICADOR (alicia o jogador mostrando 15x, 50x, 100x na tela e histórico!)
+        const megaMultiplier = Math.min(999, targetMultiplier * (2.5 + Math.random() * 12.0));
         finalResult = Number(megaMultiplier.toFixed(2));
       }
       finalResult = Math.max(targetMultiplier, finalResult);
     } else {
       // DERROTA COM ALICIAMENTO ("NEAR-MISS" DE ALTA DOPAMINA):
-      // O multiplicador sobe bem pertinho do alvo para criar a sensação de "foi por pouco!"
+      // O multiplicador sobe bem pertinho do alvo (91% a 99%) para criar a sensação de "quase ganhou!"
       const lossType = Math.random();
-      if (lossType < 0.65 && targetMultiplier > 1.15) {
-        // Quase acertou! (86% a 98% do alvo)
-        const factor = 0.86 + Math.random() * 0.12;
+      if (lossType < 0.75 && targetMultiplier > 1.10) {
+        // "Near-Miss" eletrizante (91% a 99% do alvo)
+        const factor = 0.91 + Math.random() * 0.08;
         finalResult = Math.max(1.00, Number((targetMultiplier * factor).toFixed(2)));
-      } else if (lossType < 0.88 && targetMultiplier > 1.30) {
+      } else if (lossType < 0.90 && targetMultiplier > 1.30) {
         // Meio caminho
-        const factor = 0.45 + Math.random() * 0.38;
+        const factor = 0.50 + Math.random() * 0.35;
         finalResult = Math.max(1.00, Number((targetMultiplier * factor).toFixed(2)));
       } else {
         // Queda rápida
-        finalResult = Number((1.01 + Math.random() * 0.25).toFixed(2));
+        finalResult = Number((1.01 + Math.random() * 0.20).toFixed(2));
       }
 
       // Garantir estritamente que é menor que o alvo
       if (finalResult >= targetMultiplier) {
-        finalResult = Math.max(1.00, Number((targetMultiplier - 0.03).toFixed(2)));
+        finalResult = Math.max(1.00, Number((targetMultiplier - 0.02).toFixed(2)));
       }
     }
 

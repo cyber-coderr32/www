@@ -142,6 +142,58 @@ export interface P2PTrade {
   disputedBy?: string;
 }
 
+export interface P2PCashierProfile {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatarColor?: string;
+  whatsapp?: string;
+  isOnline: boolean;
+  acceptedMethods: string[];
+  commissionRate: number; // e.g. 2.5%
+  minAmount: number;
+  maxAmount: number;
+  totalTrades: number;
+  completedTrades: number;
+  totalVolumeUSDT: number;
+  totalEarnedCommissionsUSDT: number;
+  rating: number;
+  ratingCount: number;
+  avgResponseTimeMinutes: number;
+  bankDetailsNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface P2PCashierRequest {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  requesterPhone?: string;
+  requesterAvatarColor?: string;
+  type: 'DEPOSIT' | 'WITHDRAW'; // DEPOSIT = user adds funds via cashier; WITHDRAW = user cashes out via cashier
+  amountUSDT: number;
+  fiatAmount: number;
+  fiatCurrency: 'AOA' | 'BRL' | 'EUR' | 'USD';
+  paymentMethod: string;
+  userPaymentDetails: string; // User's IBAN, Express phone, PIX key
+  commissionAmountUSDT: number;
+  status: 'OPEN' | 'MATCHED' | 'PAID' | 'COMPLETED' | 'CANCELLED' | 'DISPUTED';
+  matchedCashierId?: string;
+  matchedCashierName?: string;
+  matchedCashierPhone?: string;
+  matchedCashierAvatarColor?: string;
+  cashierPaymentDetails?: string;
+  paymentProofUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  disputeReason?: string;
+  disputedBy?: string;
+  ratingGiven?: number;
+  feedback?: string;
+}
+
 export interface TransactionRequest {
   id: string;
   userId: string;

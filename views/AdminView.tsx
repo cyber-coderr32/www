@@ -57,7 +57,8 @@ import {
   Send,
   Mic,
   Gift,
-  Volume2
+  Volume2,
+  Coins
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -3832,6 +3833,176 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
 
         </div>
       </main>
+
+      {/* MODAL: ELIMINAR USUÁRIO */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-[#0b0e14] border border-red-500/30 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl shadow-red-950/50">
+            <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-500/20 text-red-400 border border-red-500/30 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white uppercase tracking-tight">
+                  Eliminar Usuário Definitivamente
+                </h3>
+                <p className="text-xs text-red-400 font-medium">
+                  Esta ação é irreversível e excluirá a conta permanentemente.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-black/50 border border-white/10 rounded-2xl p-4 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Nome:</span>
+                <span className="font-bold text-white">{userToDelete.name}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Email:</span>
+                <span className="font-mono text-slate-300">{userToDelete.email || 'Não informado'}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">ID / UID:</span>
+                <span className="font-mono text-[11px] text-amber-400">{userToDelete.id}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Saldo Atual:</span>
+                <span className="font-bold text-emerald-400">{userToDelete.balance?.toFixed(2)} USDT</span>
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer bg-white/5 p-3 rounded-xl border border-white/5">
+              <input
+                type="checkbox"
+                checked={deleteUserTransactions}
+                onChange={e => setDeleteUserTransactions(e.target.checked)}
+                className="w-4 h-4 rounded text-red-500 focus:ring-red-500 accent-red-500"
+              />
+              <span>Excluir também todo o histórico de transações deste usuário</span>
+            </label>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                disabled={isDeletingUser}
+                className="flex-1 py-3 bg-white/10 hover:bg-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteUser}
+                disabled={isDeletingUser}
+                className="flex-1 py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-red-600/30 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isDeletingUser ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Eliminar Conta</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: AJUSTAR SALDO / CRÉDITO MANUAL */}
+      {selectedUserForCredit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-[#0b0e14] border border-emerald-500/30 rounded-3xl w-full max-w-md p-6 space-y-5 shadow-2xl shadow-emerald-950/50">
+            <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                <Coins className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white uppercase tracking-tight">
+                  Ajuste de Saldo de Usuário
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Creditando ou debitando a conta de <span className="text-emerald-400 font-bold">{selectedUserForCredit.name}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Valor da Operação (Use negativo para debitar)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={creditAmount}
+                    onChange={e => setCreditAmount(e.target.value)}
+                    placeholder="Ex: 50 ou -20"
+                    className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white font-mono font-bold text-base outline-none focus:border-emerald-500"
+                  />
+                  <span className="absolute right-4 top-3.5 text-xs text-slate-400 font-bold">USDT / Kz</span>
+                </div>
+              </div>
+
+              {/* Quick Chips */}
+              <div className="flex flex-wrap gap-1.5">
+                {[10, 50, 100, 500, -10, -50].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setCreditAmount(String(val))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all border cursor-pointer ${
+                      val > 0 
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20' 
+                        : 'bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20'
+                    }`}
+                  >
+                    {val > 0 ? `+${val}` : `${val}`}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Motivo / Observação
+                </label>
+                <input
+                  type="text"
+                  value={creditReason}
+                  onChange={e => setCreditReason(e.target.value)}
+                  placeholder="Ex: Bónus de Depósito, Correção, etc."
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-white text-xs outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedUserForCredit(null);
+                  setCreditAmount('');
+                }}
+                className="flex-1 py-3 bg-white/10 hover:bg-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleManualCredit}
+                className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Confirmar Ajuste</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
