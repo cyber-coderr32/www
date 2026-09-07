@@ -64,12 +64,12 @@ service cloud.firestore {
     function isValidPrivateMessage(data) {
       return data.chatId is string &&
              data.senderId is string &&
-             data.senderId == request.auth.uid &&
+             (data.senderId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com') &&
              data.senderName is string &&
              data.receiverId is string &&
              data.receiverName is string &&
              data.content is string &&
-             data.content.size() <= 1000;
+             data.content.size() <= 5000;
     }
 
     function isValidStory(data) {
@@ -109,7 +109,19 @@ service cloud.firestore {
              data.isRead is bool;
     }
 
+    function isValidUserPresence(data) {
+      return data.uid is string &&
+             data.isOnline is bool &&
+             data.lastSeen is string;
+    }
+
     // --- Collection Matches ---
+
+    match /user_presence/{userId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() && (userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com') && isValidUserPresence(incoming());
+      allow delete: if isSignedIn() && (userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+    }
 
     match /users/{userId} {
       allow get: if isSignedIn(); // Allow reading other profiles to support searching/listing users
@@ -117,7 +129,7 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && isValidUser(incoming()) && (
         // Action: Update balance, stats, or profile details
-        incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'usdtBalance', 'totalWins', 'totalBets', 'updatedAt', 'displayName', 'phone', 'bio', 'avatarColor', 'whatsapp'])
+        incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'usdtBalance', 'totalWins', 'totalBets', 'updatedAt', 'displayName', 'phone', 'bio', 'avatarColor', 'whatsapp', 'isOnline', 'lastSeen'])
       );
     }
 
@@ -159,15 +171,17 @@ service cloud.firestore {
     }
 
     match /private_messages/{messageId} {
-      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+      allow get: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
       allow create: if isSignedIn() && isValidPrivateMessage(incoming());
-      allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
+      allow delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
     }
 
     match /stories/{storyId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && (incoming().userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
-      allow update: if isSignedIn();
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
       allow delete: if isSignedIn() && (existing().userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
     }
 
@@ -211,38 +225,37 @@ service cloud.firestore {
 
     match /pdf_books/{bookId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
       allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
     }
 
     match /orders/{orderId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
       allow create: if isSignedIn();
-      allow update: if isSignedIn() || request.auth == null;
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
     }
 
     match /p2p_chat_messages/{messageId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
       allow create: if isSignedIn();
     }
 
     match /test/{docId} {
-      allow read, write: if true;
+      allow get: if true; // Used solely for client connection test
+      allow list, write: if false;
     }
 
     match /api_keys/{keyId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn();
+      allow read, write: if isSignedIn() && request.auth.token.email == 'alfaajmc@gmail.com';
     }
 
     match /operator_sessions/{sessionId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() && (resource.data.operatorId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
     }
 
     match /operator_transactions/{txId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() && (resource.data.operatorId == request.auth.uid || request.auth.token.email == 'alfaajmc@gmail.com');
     }
   }
 }

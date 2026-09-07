@@ -83,7 +83,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
   const [pixKey, setPixKey] = useState<string>('');
   const [internationalPayments, setInternationalPayments] = useState<string>('');
   const [minLimit, setMinLimit] = useState<string>('');
-  const [whatsapp, setWhatsapp] = useState<string>('');
   const [submittingOffer, setSubmittingOffer] = useState(false);
 
   // Active Trade initiation modal
@@ -180,7 +179,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
         displayName: 'Guest Pilot',
         balance: balance,
         usdtBalance: Number(localStorage.getItem('crypton_local_usdt_balance') || '250.00'),
-        whatsapp: '+244 923 000 000',
         paymentDetails: 'Multicaixa Express - AO06 0000 0000 0000 0000 0'
       });
       setUsdtBalance(Number(localStorage.getItem('crypton_local_usdt_balance') || '250.00'));
@@ -223,7 +221,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
             paymentDetails: 'Banco BAI - AO06 0040 0000 2341 5567 1',
             pixKey: 'merchant.vip@pix.com.br',
             internationalPayments: 'Wise: @angolacryptovip | Revolut: @angolacrypto',
-            whatsapp: '+244 934 111 222',
             createdAt: new Date().toISOString(),
             status: 'ACTIVE'
           },
@@ -238,7 +235,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
             paymentDetails: 'BIC - AO06 0050 0000 4432 1198 2',
             pixKey: '123.456.789-00',
             internationalPayments: 'Binance Pay ID: 88471920',
-            whatsapp: '+244 912 333 444',
             createdAt: new Date().toISOString(),
             status: 'ACTIVE'
           },
@@ -253,7 +249,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
             paymentDetails: 'Multicaixa Express - AO06 0000 1234 5678 9',
             pixKey: '+5511999998888',
             internationalPayments: 'PayPal / Wise / Revolut',
-            whatsapp: '+244 922 999 000',
             createdAt: new Date().toISOString(),
             status: 'ACTIVE'
           }
@@ -489,7 +484,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
         totalAmount: amountVal,
         price: priceVal,
         minLimit: limitVal,
-        whatsapp: whatsapp || profile?.whatsapp || '',
         paymentDetails: paymentDetails || 'Multicaixa Express - AO06 0000 0000 0000 0000 0',
         pixKey: pixKey,
         internationalPayments: internationalPayments,
@@ -530,7 +524,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
         totalAmount: amountVal,
         price: priceVal,
         minLimit: limitVal,
-        whatsapp: whatsapp || profile?.whatsapp || '',
         paymentDetails: paymentDetails || 'IBAN não configurado',
         pixKey: pixKey,
         internationalPayments: internationalPayments,
@@ -597,8 +590,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
         status: 'PENDING_PAYMENT',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        buyerPhone: profile?.whatsapp || '',
-        sellerPhone: selectedOffer.whatsapp || '',
         paymentDetails: selectedOffer.paymentDetails || '',
         pixKey: selectedOffer.pixKey || '',
         internationalPayments: selectedOffer.internationalPayments || ''
@@ -658,8 +649,6 @@ const P2PView: React.FC<P2PViewProps> = ({ balance, user, onUpdateBalance, onBac
         status: 'PENDING_PAYMENT',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        buyerPhone: profile?.whatsapp || '',
-        sellerPhone: selectedOffer.whatsapp || '',
         paymentDetails: selectedOffer.paymentDetails || '',
         pixKey: selectedOffer.pixKey || '',
         internationalPayments: selectedOffer.internationalPayments || '',

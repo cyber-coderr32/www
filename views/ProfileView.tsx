@@ -314,7 +314,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
     try {
       const chatId = [currentUid, user.id].sort().join('_');
       const saved = localStorage.getItem(`cryptonbet_dm_${chatId}`);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((m: any) => !m.isDeleted && m.text !== 'Esta mensagem foi eliminada.' && !m.text?.toLowerCase().includes('foi eliminada'));
+        }
+      }
     } catch (e) {}
     return [
       {
@@ -776,7 +781,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
   const [editName, setEditName] = useState(user.name);
   const [editPhone, setEditPhone] = useState(user.phone || '');
   const [editBio, setEditBio] = useState(user.bio || '');
-  const [editWhatsapp, setEditWhatsapp] = useState(user.whatsapp || '');
   const [selectedAvatarColor, setSelectedAvatarColor] = useState(user.avatarColor || 'bg-gradient-to-tr from-[#049444] to-[#FFCC00]');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -788,7 +792,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
     setEditName(user.name);
     setEditPhone(user.phone || '');
     setEditBio(user.bio || '');
-    setEditWhatsapp(user.whatsapp || '');
     setSelectedAvatarColor(user.avatarColor || 'bg-gradient-to-tr from-[#049444] to-[#FFCC00]');
 
     // Load creator & monetization stats from local storage posts
@@ -821,7 +824,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
     } catch (e) {
       console.error("Error loading creator stats", e);
     }
-  }, [user.id, user.name, user.phone, user.bio, user.whatsapp, user.avatarColor]);
+  }, [user.id, user.name, user.phone, user.bio, user.avatarColor]);
   
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -975,8 +978,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
         name: editName,
         phone: editPhone,
         bio: editBio,
-        avatarColor: selectedAvatarColor,
-        whatsapp: editWhatsapp
+        avatarColor: selectedAvatarColor
       });
       showFeedback('Perfil guardado com sucesso!');
     } catch (err) {
@@ -3358,17 +3360,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ balance, user, currentUser, i
                                      value={editPhone} 
                                      onChange={(e) => setEditPhone(e.target.value)}
                                      placeholder="+244 9..."
-                                     className="bg-white/5 border border-white/5 rounded-2xl px-6 py-4 text-white font-bold text-xs focus:outline-none focus:border-[#049444]/50 transition-colors" 
-                                   />
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                   <label className="text-[9px] font-black text-white/20 uppercase ml-4">WhatsApp Link / Direct</label>
-                                   <input 
-                                     type="text" 
-                                     value={editWhatsapp} 
-                                     onChange={(e) => setEditWhatsapp(e.target.value)}
-                                     placeholder="+244 923 000 000"
                                      className="bg-white/5 border border-white/5 rounded-2xl px-6 py-4 text-white font-bold text-xs focus:outline-none focus:border-[#049444]/50 transition-colors" 
                                    />
                                 </div>

@@ -15,6 +15,8 @@
         "bio": { "type": "string" },
         "avatarColor": { "type": "string" },
         "whatsapp": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "lastSeen": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "balance"]
@@ -71,6 +73,10 @@
         "receiverId": { "type": "string" },
         "receiverName": { "type": "string" },
         "content": { "type": "string" },
+        "isDeleted": { "type": "boolean" },
+        "isEdited": { "type": "boolean" },
+        "reactions": { "type": "object" },
+        "replyTo": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["chatId", "senderId", "senderName", "receiverId", "receiverName", "content", "createdAt"]
@@ -178,9 +184,26 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "author", "price"]
+    },
+    "UserPresence": {
+      "title": "User Presence",
+      "description": "Real-time online and offline presence status of users",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "lastSeen": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "isOnline", "lastSeen"]
     }
   },
   "firestore": {
+    "/user_presence/{userId}": {
+      "schema": "UserPresence",
+      "description": "Real-time presence and last seen records"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles and wallet"

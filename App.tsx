@@ -4,6 +4,7 @@ import { ViewState, UserAccount, GlobalSettings } from './types';
 import { soundService } from './services/soundService';
 import { authService } from './services/authService';
 import { userService } from './services/userService';
+import { presenceService } from './services/presenceService';
 import { doc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from './services/firebase';
 import LoginView from './views/LoginView';
@@ -376,6 +377,17 @@ const App: React.FC = () => {
 
     return () => unsubUser();
   }, [user?.id]);
+
+  // Real-time presence tracking for truthful Online/Offline status
+  useEffect(() => {
+    if (!user?.id) return;
+    const stopTracking = presenceService.startTracking(user.id, user.name || 'Jogador');
+    return () => {
+      if (typeof stopTracking === 'function') {
+        stopTracking();
+      }
+    };
+  }, [user?.id, user?.name]);
 
   useEffect(() => {
     const syncSettings = () => {
