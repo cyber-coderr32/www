@@ -9,8 +9,10 @@ import { db } from '../services/firebase';
 import { collection, getDocs, doc, updateDoc, setDoc, query, limit, deleteDoc } from 'firebase/firestore';
 import AudioVoiceRecorder from '../components/AudioVoiceRecorder';
 import AudioVoicePlayer from '../components/AudioVoicePlayer';
+import { AdminSecurityWafTab } from '../components/AdminSecurityWafTab';
 import { 
   ShieldCheck, 
+  ShieldAlert,
   TrendingUp, 
   Users, 
   Wallet, 
@@ -65,7 +67,7 @@ interface AdminViewProps {
   onBack: () => void;
 }
 
-type AdminTab = 'DASHBOARD' | 'USERS' | 'NOTIFICATIONS' | 'FINANCE' | 'PAYMENTS' | 'ENGINE' | 'P2P_MARKET';
+type AdminTab = 'DASHBOARD' | 'USERS' | 'NOTIFICATIONS' | 'FINANCE' | 'PAYMENTS' | 'ENGINE' | 'P2P_MARKET' | 'SECURITY';
 
 type TransTypeFilter = 'ALL' | 'DEPOSIT' | 'WITHDRAW';
 type TransStatusFilter = 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -866,6 +868,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
     { id: 'FINANCE' as AdminTab, label: 'Aprovação Financeira', icon: <Wallet className="w-5 h-5 text-amber-400" />, badge: pendingCount },
     { id: 'PAYMENTS' as AdminTab, label: 'Métodos de Pagamento', icon: <CreditCard className="w-5 h-5 text-purple-400" /> },
     { id: 'ENGINE' as AdminTab, label: 'Motor & Algoritmos (RTP)', icon: <Cpu className="w-5 h-5 text-red-400" /> },
+    { id: 'SECURITY' as AdminTab, label: 'WAF & Anti-Hacker', icon: <ShieldAlert className="w-5 h-5 text-rose-400" /> },
   ];
 
   const handleCopyToClipboard = (text: string, label: string) => {
@@ -3830,6 +3833,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBack }) => {
 
             </div>
           )}
+
+          {activeTab === 'SECURITY' && <AdminSecurityWafTab />}
 
         </div>
       </main>

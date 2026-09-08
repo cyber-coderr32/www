@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { Trophy, Zap, TrendingUp, ChevronRight, Star } from 'lucide-react';
 import { soundService } from '../services/soundService';
 import { ViewState } from '../types';
+import { GameCardAnimation } from './GameCardAnimation';
 
 interface FeaturedGame {
   id: ViewState;
@@ -56,6 +57,9 @@ export const FeaturedGames: React.FC<FeaturedGamesProps> = ({ onSelect }) => {
             
             {/* Pattern Overlay */}
             <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_20%_20%,white_1px,transparent_0)] bg-[length:20px_20px]" />
+
+            {/* Dynamic Real Game Graphic Animation */}
+            <GameCardAnimation gameId={game.id} className="opacity-70 group-hover:opacity-100 transition-all z-[5]" />
 
             {/* Content */}
             <div className="absolute inset-0 p-5 md:p-6 flex flex-col justify-between z-10">

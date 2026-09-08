@@ -173,6 +173,7 @@ const PROMO_SLIDES: PromoSlide[] = [
 ];
 
 import { FeaturedGames } from '../components/FeaturedGames';
+import { GameCardAnimation } from '../components/GameCardAnimation';
 
 const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelectGame, onGoToProfile, onOpenDeposit }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -437,7 +438,10 @@ const HomeView: React.FC<HomeViewProps> = ({ balance, isDemo, userName, onSelect
               >
                 {/* Background "Cover" */}
                 <div className={`absolute inset-0 bg-gradient-to-br ${game.color} transition-all duration-500 group-hover:scale-110`} />
-                
+
+                {/* Dynamic Real Game Graphic Animation */}
+                <GameCardAnimation gameId={game.id} className="opacity-75 group-hover:opacity-100 transition-opacity z-[4]" />
+
                 {/* Decorative Layers */}
                 <div className="absolute top-0 right-0 p-2 md:p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                    <div className="text-4xl md:text-7xl font-black italic rotate-12 select-none group-hover:rotate-0 transition-transform duration-700">

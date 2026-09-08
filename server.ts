@@ -9,6 +9,7 @@ import { db } from "./services/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { securityWaf } from "./services/securityWaf";
 
 // Inicialização segura do Firebase Admin SDK no backend (com fallback)
 function getAdminDb() {
@@ -39,8 +40,11 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+  // 🛡️ WAF Sentinel & Anti-Hacker Shield (Proteção Ativa contra SQLMap, Nmap, Burp Suite, Scanners, RCE, Path Traversal)
+  app.use(securityWaf.middleware);
 
   const WEBHOOK_LOGS_FILE = path.join(process.cwd(), 'webhook_logs.json');
   let recentWebhookLogs: any[] = [];
@@ -2222,6 +2226,58 @@ async function startServer() {
         { path: "/api/v1/seamless/test-webhook", method: "POST", description: "Simula requisição de carteira Seamless Wallet (balance, debit, credit)." }
       ]
     });
+  });
+
+  // ==========================================
+  // 🛡️ API DE GESTÃO DO WAF & SENTINEL DE SEGURANÇA
+  // ==========================================
+  app.get("/api/admin/waf/overview", (req, res) => {
+    try {
+      const data = securityWaf.getOverview();
+      return res.json({ success: true, ...data });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/admin/waf/unban", (req, res) => {
+    try {
+      const { ip } = req.body;
+      if (!ip) return res.status(400).json({ success: false, error: "IP é obrigatório" });
+      securityWaf.unbanIp(ip);
+      return res.json({ success: true, message: `IP ${ip} desbanido com sucesso.` });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/admin/waf/ban", (req, res) => {
+    try {
+      const { ip, reason, durationMinutes } = req.body;
+      if (!ip) return res.status(400).json({ success: false, error: "IP é obrigatório" });
+      securityWaf.banIp(ip, reason || "Banimento manual pelo administrador", durationMinutes || 60);
+      return res.json({ success: true, message: `IP ${ip} banido com sucesso.` });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/admin/waf/config", (req, res) => {
+    try {
+      const updated = securityWaf.updateConfig(req.body);
+      return res.json({ success: true, config: updated });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post("/api/admin/waf/clear-logs", (req, res) => {
+    try {
+      securityWaf.clearLogs();
+      return res.json({ success: true, message: "Logs de ameaças limpos com sucesso." });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
   });
 
   // Vite middleware for development

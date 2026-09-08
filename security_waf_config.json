@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "sensitivity": "STRICT",
+  "blockSqlMap": true,
+  "blockNmap": true,
+  "blockBurpSuite": true,
+  "blockScanners": true,
+  "blockSqlInjection": true,
+  "blockPathTraversal": true,
+  "blockCommandInjection": true,
+  "blockReconnaissancePaths": true,
+  "rateLimitEnabled": true,
+  "maxRequestsPerMinute": 180,
+  "autoBanThreshold": 3,
+  "banDurationMinutes": 30
+}

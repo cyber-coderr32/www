@@ -981,18 +981,23 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
     soundService.playUISelect();
     if (currentUserId === 'guest_user') {
       const allMsgs = JSON.parse(localStorage.getItem('cryptonbet_local_messages') || '[]');
-      const updated = allMsgs.map((m: any) => m.id === msgId ? { ...m, isDeleted: true, content: '🚫 Esta mensagem foi eliminada.' } : m);
+      const updated = allMsgs.filter((m: any) => m.id !== msgId);
       localStorage.setItem('cryptonbet_local_messages', JSON.stringify(updated));
-      setChatMessages(prev => prev.map(m => m.id === msgId ? { ...m, isDeleted: true, content: '🚫 Esta mensagem foi eliminada.' } : m));
+      setChatMessages(prev => prev.filter(m => m.id !== msgId));
       return;
     }
+    setChatMessages(prev => prev.filter(m => m.id !== msgId));
     try {
-      await updateDoc(doc(db, 'private_messages', msgId), {
-        isDeleted: true,
-        content: '🚫 Esta mensagem foi eliminada.'
-      });
+      await deleteDoc(doc(db, 'private_messages', msgId));
     } catch (err) {
-      console.error("Error deleting message:", err);
+      try {
+        await updateDoc(doc(db, 'private_messages', msgId), {
+          isDeleted: true,
+          content: ''
+        });
+      } catch (e) {
+        console.error("Error deleting message:", err);
+      }
     }
   };
 
@@ -1892,7 +1897,7 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
 
     if (!currentUser || currentUserId === 'guest_user') {
       const allMsgs = JSON.parse(localStorage.getItem('cryptonbet_local_messages') || '[]');
-      const filtered = allMsgs.filter((m: any) => m.chatId === chatId);
+      const filtered = allMsgs.filter((m: any) => m.chatId === chatId && !m.isDeleted && !m.content?.includes('eliminada'));
       setChatMessages(filtered);
       return;
     }
@@ -1909,6 +1914,7 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
       const msgs: PrivateMessage[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+        if (data.isDeleted || (data.content && data.content.includes('eliminada'))) return;
         msgs.push({
           id: doc.id,
           chatId: data.chatId,
@@ -1918,7 +1924,7 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
           receiverName: data.receiverName,
           content: data.content,
           createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt)) : new Date(),
-          isDeleted: data.isDeleted,
+          isDeleted: false,
           isEdited: data.isEdited,
           reactions: data.reactions,
           replyTo: data.replyTo
@@ -6225,46 +6231,55 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    {acceptedFriends.map((friend) => (
-                      <div
-                        key={friend.uid}
-                        className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-[#1877f2]/30 transition-all shadow-sm"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="relative cursor-pointer" onClick={() => { soundService.playUISelect(); setActiveFriendProfile(friend); }}>
-                            <div className="w-9 h-9 rounded-full bg-[#1877f2]/5 flex items-center justify-center text-[#1877f2] border border-[#1877f2]/10 font-black text-sm uppercase hover:scale-105 transition-all" title="Ver Perfil do Trader">
-                              {friend.displayName.charAt(0)}
+                    {acceptedFriends.map((friend) => {
+                      const presence = getUserPresence(friend.uid);
+                      return (
+                        <div
+                          key={friend.uid}
+                          className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-[#1877f2]/30 transition-all shadow-sm"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="relative cursor-pointer" onClick={() => { soundService.playUISelect(); setActiveFriendProfile(friend); }}>
+                              <div className="w-9 h-9 rounded-full bg-[#1877f2]/5 flex items-center justify-center text-[#1877f2] border border-[#1877f2]/10 font-black text-sm uppercase hover:scale-105 transition-all" title="Ver Perfil do Trader">
+                                {friend.displayName.charAt(0)}
+                              </div>
+                              <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 border-2 border-white rounded-full ${
+                                presence.isOnline ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.8)]' : 'bg-slate-400'
+                              }`} title={presence.isOnline ? 'Online' : presence.statusText} />
                             </div>
-                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></span>
+                            <div className="cursor-pointer" onClick={() => { soundService.playUISelect(); setActiveFriendProfile(friend); }} title="Ver Perfil do Trader">
+                              <span className="text-xs font-black block text-slate-900 hover:text-[#1877f2] transition-colors">{friend.displayName}</span>
+                              <span className={`text-[8px] font-bold uppercase tracking-widest block ${
+                                presence.isOnline ? 'text-emerald-600' : 'text-slate-400'
+                              }`}>
+                                {presence.isOnline ? 'Online agora' : presence.statusText}
+                              </span>
+                            </div>
                           </div>
-                          <div className="cursor-pointer" onClick={() => { soundService.playUISelect(); setActiveFriendProfile(friend); }} title="Ver Perfil do Trader">
-                            <span className="text-xs font-black block text-slate-900 hover:text-[#1877f2] transition-colors">{friend.displayName}</span>
-                            <span className="text-[8px] text-emerald-600 font-bold uppercase tracking-widest block">Online agora</span>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              soundService.playUISelect();
-                              setActiveChatFriend(friend);
-                              setActiveTab('chat');
-                            }}
-                            className="p-2 bg-slate-100 hover:bg-[#1877f2] hover:text-white text-[#1877f2] rounded-full transition-all cursor-pointer"
-                            title="Chat Messenger"
-                          >
-                            <MessageCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleRemoveFriend(friend.uid)}
-                            className="p-2 bg-slate-100 hover:bg-red-500 text-slate-400 hover:text-white rounded-full transition-all cursor-pointer"
-                            title="Remover Amigo"
-                          >
-                            <UserMinus className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                soundService.playUISelect();
+                                setActiveChatFriend(friend);
+                                setActiveTab('chat');
+                              }}
+                              className="p-2 bg-slate-100 hover:bg-[#1877f2] hover:text-white text-[#1877f2] rounded-full transition-all cursor-pointer"
+                              title="Chat Messenger"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveFriend(friend.uid)}
+                              className="p-2 bg-slate-100 hover:bg-red-500 text-slate-400 hover:text-white rounded-full transition-all cursor-pointer"
+                              title="Remover Amigo"
+                            >
+                              <UserMinus className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -6474,28 +6489,17 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                            <div className="pt-1">
                               <button
                                 type="button"
                                 onClick={() => {
                                   soundService.playUISelect();
                                   setChatInitialMode('COMMUNICATION');
                                 }}
-                                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
+                                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
                               >
                                 <MessageCircle className="w-4 h-4" />
-                                <span>Modo Conversa Social</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  soundService.playUISelect();
-                                  setChatInitialMode('NEGOTIATION');
-                                }}
-                                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
-                              >
-                                <Lock className="w-4 h-4" />
-                                <span>Modo Negociação (Escrow)</span>
+                                <span>Iniciar Conversa</span>
                               </button>
                             </div>
                           </div>
@@ -6504,12 +6508,12 @@ const SocialView: React.FC<SocialViewProps> = ({ balance, isDemo, onBack, onSele
                           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
                             <div className="flex items-center gap-2 font-black text-amber-800 uppercase tracking-wider text-[11px]">
                               <ShieldCheck className="w-4 h-4 text-amber-600" />
-                              <span>Sentinela de Segurança e Anti-Fraude Ativo</span>
+                              <span>Segurança e Proteção Ativa</span>
                             </div>
                             <ul className="space-y-1.5 text-[11px] text-amber-900/90 font-medium list-disc list-inside">
-                              <li><strong>Detecção Automática:</strong> Se conversarem sobre valores ou transferências, o chat activa o protocolo de segurança.</li>
+                              <li><strong>Proteção Automática:</strong> Todas as negociações de saldo contam com segurança integrada.</li>
                               <li><strong>Anti-Burla Externo:</strong> Tentativas de enviar contactos de WhatsApp, Telegram ou links externos são bloqueadas.</li>
-                              <li><strong>Regra de Ouro:</strong> Nunca liberte USDT sem conferir pessoalmente o saldo no seu extrato bancário oficial.</li>
+                              <li><strong>Confirmação Bancária:</strong> Nunca liberte valores sem conferir pessoalmente o saldo no seu extrato bancário oficial.</li>
                             </ul>
                           </div>
 

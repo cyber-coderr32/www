@@ -181,7 +181,7 @@ export const checkOffPlatformAttempt = (text: string): { isOffPlatform: boolean;
     if (clean.includes(keyword)) {
       return {
         isOffPlatform: true,
-        reason: 'Termo bloqueado pelo Sistema Anti-Burla: Negociações fora da plataforma não possuem proteção de custódia (Escrow).'
+        reason: 'Termo bloqueado pelo Sistema Anti-Burla: Negociações devem ocorrer exclusivamente dentro da plataforma para garantir total segurança contra fraudes.'
       };
     }
   }
@@ -230,10 +230,10 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [selectedMsgActionId, setSelectedMsgActionId] = useState<string | null>(null);
 
-  // Dual mode: COMMUNICATION vs NEGOTIATION
+  // Automatic mode: Escrow is mandatory whenever a negotiation starts
   const [chatMode, setChatMode] = useState<'COMMUNICATION' | 'NEGOTIATION'>(() => {
     if (tradeContext) return 'NEGOTIATION';
-    if (initialMode) return initialMode;
+    if (initialMode === 'NEGOTIATION') return 'NEGOTIATION';
     return 'COMMUNICATION';
   });
 
@@ -246,9 +246,6 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
   // P2P Quick Transfer Modal inside chat
   const [isQuickTransferOpen, setIsQuickTransferOpen] = useState(false);
   const [quickTransferAmount, setQuickTransferAmount] = useState('10');
-
-  // Real-time Negotiation Intent Detector
-  const [negotiationDetected, setNegotiationDetected] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -384,7 +381,7 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
         senderName: 'Negociação P2P CryptonBet',
         text: `Ordem #${tradeContext.tradeId.slice(-6)} ativa: ${tradeContext.amountUSDT.toFixed(2)} USDT ${
           tradeContext.fiatAmount ? `(${tradeContext.fiatAmount.toLocaleString()} ${tradeContext.fiatCurrency || 'AOA'})` : ''
-        } sob custódia protegida (Escrow).`,
+        }. Os fundos estão protegidos com segurança garantida pela plataforma.`,
         time: 'Agora',
         isSystem: true
       });
@@ -502,22 +499,23 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
     }
   }, [isOpen, partner?.id, currentUser?.id, chatId, storageKey]);
 
-  // Check for negotiation intent dynamically
+  // Automatically activate mandatory escrow protection as soon as negotiation starts
   useEffect(() => {
-    if (chatMode === 'NEGOTIATION') {
-      setNegotiationDetected(false);
+    if (tradeContext) {
+      if (chatMode !== 'NEGOTIATION') setChatMode('NEGOTIATION');
       return;
     }
 
-    if (inputText.length > 2 && checkNegotiationIntent(inputText)) {
-      setNegotiationDetected(true);
-      return;
-    }
+    if (chatMode === 'NEGOTIATION') return;
 
-    const recent = messages.slice(-3);
-    const hasIntent = recent.some(m => !m.isSystem && checkNegotiationIntent(m.text));
-    setNegotiationDetected(hasIntent);
-  }, [inputText, messages, chatMode]);
+    const isInputNegotiation = inputText.length > 2 && checkNegotiationIntent(inputText);
+    const recent = messages.slice(-4);
+    const hasIntentInMsgs = recent.some(m => !m.isSystem && checkNegotiationIntent(m.text));
+
+    if (isInputNegotiation || hasIntentInMsgs) {
+      setChatMode('NEGOTIATION');
+    }
+  }, [inputText, messages, chatMode, tradeContext]);
 
   // Auto-scroll to bottom
   const scrollToBottom = () => {
@@ -583,7 +581,7 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
           id: 'warn_' + Date.now(),
           senderId: 'system_security',
           senderName: 'Sentinela Anti-Burla CryptonBet',
-          text: `🚨 Tentativa de desvio para canal externo detectada e bloqueada! Golpistas utilizam o WhatsApp para forjar comprovativos falsos. Todas as negociações protegidas devem ocorrer neste chat sob custódia Escrow.`,
+          text: `🚨 Tentativa de desvio para canal externo detectada e bloqueada! Golpistas utilizam redes sociais externas para forjar comprovativos falsos. Todas as negociações devem ocorrer exclusivamente dentro deste chat oficial com segurança garantida.`,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isSystem: true,
           fraudWarning: true
@@ -848,7 +846,14 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
   // Delete message completely (purges message and removes bubble entirely)
   const handleDeleteMessage = async (id: string) => {
     soundService.playUISelect();
-    const updated = messages.filter(m => m.id !== id);
+    setSelectedMsgActionId(null);
+    setReactingToMsgId(null);
+    if (replyingTo?.id === id) {
+      setReplyingTo(null);
+    }
+    const updated = messages
+      .filter(m => m.id !== id)
+      .map(m => (m.replyTo?.id === id ? { ...m, replyTo: undefined } : m));
     saveMessages(updated);
     showFeedback('Mensagem eliminada com sucesso.');
 
@@ -1021,12 +1026,12 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
                 {partnerPresence.isOnline ? (
                   <span className="text-emerald-400 font-bold flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-                    <span>{chatMode === 'NEGOTIATION' ? 'Online • Negociação Escrow' : 'Online'}</span>
+                    <span>Online</span>
                   </span>
                 ) : (
                   <span className="text-slate-400 font-medium flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                    <span>{chatMode === 'NEGOTIATION' ? `Negociação • ${partnerPresence.statusText}` : partnerPresence.statusText}</span>
+                    <span>{partnerPresence.statusText}</span>
                   </span>
                 )}
                 {partner.rating && (
@@ -1036,43 +1041,14 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
             </div>
           </div>
 
-          {/* Right Header Actions: Mode Pill Toggle, Denunciar, Fechar */}
+          {/* Right Header Actions: Active Order Badge, Transfer, Report, Close */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Mode Switcher Pill */}
-            <div className="flex items-center bg-black/40 border border-white/10 rounded-full p-0.5 text-[9px] sm:text-[10px]">
-              <button
-                type="button"
-                onClick={() => {
-                  soundService.playUISelect();
-                  setChatMode('COMMUNICATION');
-                }}
-                className={`px-2 sm:px-2.5 py-1 rounded-full font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  chatMode === 'COMMUNICATION'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Modo Conversa Social Livre"
-              >
-                <MessageSquare className="w-3 h-3" />
-                <span className="hidden xs:inline">Social</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  soundService.playUISelect();
-                  setChatMode('NEGOTIATION');
-                }}
-                className={`px-2 sm:px-2.5 py-1 rounded-full font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  chatMode === 'NEGOTIATION'
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black shadow-xs'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Modo Negociação com Custódia Escrow"
-              >
-                <ShieldCheck className="w-3 h-3" />
-                <span className="hidden xs:inline">Negociação</span>
-              </button>
-            </div>
+            {tradeContext && (
+              <div className="hidden xs:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-bold">
+                <ShieldCheck className="w-3 h-3 text-blue-400" />
+                <span>Ordem #{tradeContext.tradeId.slice(-6)}</span>
+              </div>
+            )}
 
             {/* Quick P2P Transfer Button */}
             {onSendP2PTransfer && (
@@ -1120,12 +1096,9 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
             <div className="flex items-center gap-2 min-w-0">
               <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
               <p className="text-[11px] leading-tight text-amber-100/90 truncate">
-                <strong className="text-amber-300 uppercase">Regra Anti-Burla:</strong> Vendedor, confira o extrato real no seu banco antes de libertar a custódia.
+                <strong className="text-amber-300 uppercase">Segurança na Negociação:</strong> Vendedor, confirme o extrato bancário oficial antes de confirmar a libertação.
               </p>
             </div>
-            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0 ml-2">
-              Escrow Ativo
-            </span>
           </div>
         )}
 
@@ -1498,43 +1471,6 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
         </div>
 
         {/* ========================================================================= */}
-        {/* REAL-TIME NEGOTIATION INTENT ALERT (Detects when users talk about money)   */}
-        {/* ========================================================================= */}
-        {negotiationDetected && chatMode === 'COMMUNICATION' && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mx-3 my-1.5 p-2.5 bg-gradient-to-r from-amber-500/20 via-amber-600/15 to-transparent border border-amber-500/40 rounded-2xl flex items-center justify-between gap-2.5 text-xs text-amber-200 shrink-0"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <ShieldCheck className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <span className="font-black text-amber-300 block uppercase text-[10px] tracking-wider truncate">
-                  🤝 Intenção de Negociação Detectada
-                </span>
-                <p className="text-[10px] text-amber-100/90 leading-tight truncate">
-                  Estão a tratar de valores ou pagamentos? Ative a Negociação com Custódia Escrow para evitar burlas.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                soundService.playWin();
-                setChatMode('NEGOTIATION');
-                setNegotiationDetected(false);
-                showFeedback('Modo de Negociação Protegida com Escrow ativado!', 'success');
-              }}
-              className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-xl font-black text-[10px] uppercase tracking-wider whitespace-nowrap shadow-md cursor-pointer shrink-0"
-            >
-              Ativar Escrow
-            </button>
-          </motion.div>
-        )}
-
-        {/* ========================================================================= */}
         {/* QUICK ACTION CHIPS (Safe P2P Responses, Escrow Tools, Game Challenges)   */}
         {/* ========================================================================= */}
         <div className="px-3 sm:px-4 py-2 bg-[#101722] border-t border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
@@ -1588,7 +1524,7 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
                 onClick={() => {
                   soundService.playWin();
                   setChatMode('NEGOTIATION');
-                  handleSendMessage('🤝 Tenho interesse em negociar USDT com você via P2P Escrow.');
+                  handleSendMessage('🤝 Tenho interesse em negociar USDT com você via negociação P2P.');
                 }}
                 className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl text-[10px] font-bold text-amber-300 whitespace-nowrap transition-all cursor-pointer shrink-0 flex items-center gap-1"
               >
@@ -1712,13 +1648,12 @@ export const SecureSocialChatModal: React.FC<SecureSocialChatModalProps> = ({
               onFocus={() => {
                 setTimeout(() => {
                   messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                }, 150);
+                }, 80);
+                setTimeout(() => {
+                  messageInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 280);
               }}
-              placeholder={
-                chatMode === 'NEGOTIATION'
-                  ? 'Negociação com Escrow: escreva uma mensagem...'
-                  : 'Escreva uma mensagem...'
-              }
+              placeholder="Escreva uma mensagem..."
               className="flex-1 min-w-0 bg-black/50 border border-white/20 focus:border-[#1877f2] focus:ring-1 focus:ring-[#1877f2] rounded-xl px-3.5 py-2.5 text-base sm:text-xs text-white placeholder-slate-400 focus:outline-none transition-all shadow-inner"
               autoComplete="off"
             />

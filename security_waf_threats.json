@@ -1,0 +1,80 @@
+[
+  {
+    "id": "SEC-UFPHPYL",
+    "timestamp": "2026-09-08T14:23:14.584Z",
+    "ip": "127.0.0.1",
+    "method": "GET",
+    "path": "/api/v1/games?file=../../../../etc/passwd",
+    "tool": "Path Traversal",
+    "severity": "CRITICAL",
+    "matchedRule": "Tentativa de navegação em diretórios restritos: Directory Traversal Relative Path (../)",
+    "payloadSnippet": "/api/v1/games?file=../../../../etc/passwd",
+    "action": "BLOCKED_403",
+    "userAgent": "curl/7.88.1"
+  },
+  {
+    "id": "SEC-CO9A9D1",
+    "timestamp": "2026-09-08T14:23:10.023Z",
+    "ip": "127.0.0.1",
+    "method": "GET",
+    "path": "/.env",
+    "tool": "Reconnaissance Probe",
+    "severity": "HIGH",
+    "matchedRule": "Varredura de ficheiro/diretório sensível ou honeypot: /.env",
+    "payloadSnippet": "/.env",
+    "action": "BLOCKED_403",
+    "userAgent": "curl/7.88.1"
+  },
+  {
+    "id": "SEC-YKZWEFZ",
+    "timestamp": "2026-09-08T14:23:07.190Z",
+    "ip": "127.0.0.1",
+    "method": "GET",
+    "path": "/api/v1/games?id=1%20UNION%20SELECT%20null,null,null--",
+    "tool": "SQLMap",
+    "severity": "CRITICAL",
+    "matchedRule": "Padrão de injeção SQL neutralizado: UNION SELECT injection",
+    "payloadSnippet": "/api/v1/games?id=1 UNION SELECT null,null,null--",
+    "action": "BLOCKED_403",
+    "userAgent": "curl/7.88.1"
+  },
+  {
+    "id": "SEC-0H4RGNP",
+    "timestamp": "2026-09-08T14:23:01.520Z",
+    "ip": "127.0.0.1",
+    "method": "GET",
+    "path": "/api/v1/games",
+    "tool": "Burp Suite",
+    "severity": "CRITICAL",
+    "matchedRule": "Cabeçalho ativo de Burp Suite Collaborator detetado: x-burp-collaborator",
+    "payloadSnippet": "burpcollaborator.net",
+    "action": "BLOCKED_403",
+    "userAgent": "curl/7.88.1"
+  },
+  {
+    "id": "SEC-75R83ON",
+    "timestamp": "2026-09-08T14:22:58.744Z",
+    "ip": "127.0.0.1",
+    "method": "GET",
+    "path": "/api/v1/games",
+    "tool": "Nmap",
+    "severity": "CRITICAL",
+    "matchedRule": "Assinatura de scanner de portas/redes: nmap",
+    "payloadSnippet": "nmap scripting engine",
+    "action": "BLOCKED_403",
+    "userAgent": "Nmap Scripting Engine"
+  },
+  {
+    "id": "SEC-5MKX9EC",
+    "timestamp": "2026-09-08T14:22:53.575Z",
+    "ip": "127.0.0.1",
+    "method": "GET",
+    "path": "/api/v1/games",
+    "tool": "SQLMap",
+    "severity": "CRITICAL",
+    "matchedRule": "Assinatura explícita de User-Agent do sqlmap",
+    "payloadSnippet": "sqlmap/1.6#stable",
+    "action": "BLOCKED_403",
+    "userAgent": "sqlmap/1.6#stable"
+  }
+]

@@ -246,11 +246,6 @@ class PresenceService {
     };
   }
 
-  public startTracking(uid: string, _displayName?: string) {
-    this.startPresence(uid);
-    return () => this.stopPresence();
-  }
-
   public stopTracking() {
     this.stopPresence();
   }
