@@ -22,10 +22,13 @@
       "purpose": "maskable"
     }
   ],
-  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "start_url": "/?source=pwa",
   "background_color": "#0b0e11",
   "theme_color": "#049444",
   "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "orientation": "portrait",
   "categories": ["games", "finance", "entertainment"],
   "lang": "pt-PT",
