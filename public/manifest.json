@@ -25,7 +25,7 @@
   "start_url": "/",
   "background_color": "#0b0e11",
   "theme_color": "#049444",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "portrait",
   "categories": ["games", "finance", "entertainment"],
   "lang": "pt-PT",

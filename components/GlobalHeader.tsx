@@ -136,18 +136,18 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     soundService.playUISelect();
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch((err) => {
-        console.warn('Fullscreen request failed:', err);
-      });
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch((err) => {
-          console.warn('Exit fullscreen failed:', err);
-        });
+
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      } else {
+        await document.exitFullscreen();
       }
+    } catch (error) {
+      // Fullscreen só pode ser iniciado após uma interação direta do utilizador.
+      console.warn('Fullscreen request failed:', error);
     }
   };
 
