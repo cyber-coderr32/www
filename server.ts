@@ -5,8 +5,6 @@ import { GoogleGenAI } from "@google/genai";
 import multer from "multer";
 import fs from "fs";
 import crypto from "crypto";
-import { db } from "./services/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { securityWaf } from "./services/securityWaf";
@@ -867,16 +865,16 @@ async function startServer() {
             customerEmail: customerEmail || "suporte@cryptonbet.com",
             amountUsdt: Number(amountUsdt),
             amountBrl: Number(amountBrl),
-            createdAt: serverTimestamp(),
+            createdAt: new Date(),
             isSimulated
           };
           const adminDb = getAdminDb();
           if (adminDb) {
             await adminDb.collection("orders").doc(String(id)).set(orderDocData, { merge: true });
-          } else {
-            await setDoc(doc(db, "orders", String(id)), orderDocData);
-          }
-          console.log(`[Cakto PIX] Pedido salvo no Firestore em orders/${id} (Simulado: ${isSimulated})`);
+  } else {
+    console.warn(`[Cakto PIX] Firebase Admin indisponível; pedido ${id} não foi persistido no preview.`);
+  }
+  console.log(`[Cakto PIX] Pedido processado em orders/${id} (Simulado: ${isSimulated})`);
         } catch (dbErr: any) {
           console.warn(`[Cakto PIX] Erro ao gravar pedido ${id} no Firestore:`, dbErr?.message || dbErr);
         }
@@ -1353,14 +1351,9 @@ async function startServer() {
                 }
               }
             }
-          } else {
-            await setDoc(doc(db, "orders", String(orderId)), {
-              status: newStatus,
-              lastEvent: eventType,
-              updatedAt: serverTimestamp(),
-              webhookPayload: payload
-            }, { merge: true });
-          }
+  } else {
+    console.warn(`[Cakto Webhook] Firebase Admin indisponível; atualização do pedido ${orderId} não foi persistida no preview.`);
+  }
         } catch (dbErr: any) {
           console.error("[Cakto Webhook] Erro ao atualizar documento no Firestore:", dbErr?.message || dbErr);
         }
