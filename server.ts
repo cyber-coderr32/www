@@ -2275,10 +2275,16 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
+  const vite = await createViteServer({
+    server: {
+      middlewareMode: true,
+      // O preview é servido atrás de um proxy que não encaminha o socket HMR.
+      // Desativar apenas o HMR evita o erro "WebSocket closed without opened";
+      // o servidor continua servindo e atualizando os módulos normalmente após reload.
+      hmr: false,
+    },
+    appType: "spa",
+  });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
