@@ -35,13 +35,8 @@ export const PWAInstallPrompt: React.FC = () => {
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    // 4. Mostrar o popup para instalar PWA UMA ÚNICA VEZ ao abrir o site no navegador
-    const timer = setTimeout(() => {
-      const alreadyShown = localStorage.getItem('cryptonbet_pwa_prompt_shown');
-      if (!isStandalone && !alreadyShown) {
-        setShowModal(true);
-      }
-    }, 1000);
+    // O prompt só é aberto por uma ação explícita no novo botão de instalação.
+    // O navegador decide quando o evento nativo está disponível.
 
     // Escutar se o app foi instalado com sucesso
     const handleAppInstalled = () => {
@@ -55,7 +50,6 @@ export const PWAInstallPrompt: React.FC = () => {
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
-      clearTimeout(timer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
@@ -99,7 +93,17 @@ export const PWAInstallPrompt: React.FC = () => {
 
   return (
     <>
-      {/* POPUP DE INSTALAÇÃO PWA (Aparece uma única vez ao abrir o site) */}
+      <button
+        type="button"
+        onClick={() => setShowModal(true)}
+        aria-label="Instalar CryptonBet como aplicativo"
+        className="fixed bottom-24 right-4 z-[9990] flex items-center gap-2 rounded-full border border-emerald-300/50 bg-emerald-600 px-4 py-3 text-xs font-black uppercase tracking-wide text-white shadow-xl shadow-emerald-900/40 transition-transform hover:scale-105 active:scale-95"
+      >
+        <Download className="h-4 w-4" />
+        Instalar app
+      </button>
+
+      {/* POPUP DE INSTALAÇÃO PWA aberto apenas pelo botão */}
       <AnimatePresence>
         {showModal && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
