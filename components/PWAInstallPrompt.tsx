@@ -1,20 +1,75 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
 
 export const PWAInstallPrompt: React.FC = () => {
+  const [installEvent, setInstallEvent] = useState<InstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [message, setMessage] = useState('');
+
   useEffect(() => {
-    const handleBeforeInstallPrompt = () => {
-      // Não bloquear o evento: o navegador deve mostrar a sugestão nativa.
+    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+
+    setIsInstalled(standalone);
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallEvent(event as InstallPromptEvent);
+    };
+
+    const handleInstalled = () => {
+      setIsInstalled(true);
+      setInstallEvent(null);
+      setMessage('Aplicativo instalado com sucesso.');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
     };
   }, []);
 
-  // A instalação é apresentada pelo próprio navegador, sem botão ou modal customizado.
-  return null;
+  const installApp = async () => {
+    if (!installEvent) {
+      setMessage('Abra este site diretamente no Chrome para instalar. O botão não funciona dentro da pré-visualização do v0.');
+      return;
+    }
+
+    await installEvent.prompt();
+    const choice = await installEvent.userChoice;
+
+    if (choice.outcome === 'accepted') {
+      setInstallEvent(null);
+      setMessage('Instalação iniciada.');
+    }
+  };
+
+  if (isInstalled) return null;
+
+  return (
+    <div className="fixed bottom-24 right-4 z-[9999] flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
+      {message && (
+        <p className="max-w-xs rounded-lg bg-slate-900 px-3 py-2 text-right text-xs font-semibold text-white shadow-lg">
+          {message}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={installApp}
+        className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-black uppercase text-white shadow-xl shadow-emerald-950/40 transition hover:bg-emerald-500 active:scale-95"
+        aria-label="Instalar aplicativo CryptonBet"
+      >
+        Instalar aplicativo
+      </button>
+    </div>
+  );
 };
 
 export default PWAInstallPrompt;
