@@ -22,14 +22,15 @@
       "purpose": "maskable"
     }
   ],
-  "id": "/",
+  "id": "/cryptonbet",
   "scope": "/",
-  "start_url": "/?source=pwa",
+  "start_url": "/",
   "background_color": "#0b0e11",
   "theme_color": "#049444",
-  "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone", "minimal-ui"],
-  "orientation": "portrait",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
   "categories": ["games", "finance", "entertainment"],
   "lang": "pt-PT",
   "dir": "ltr"

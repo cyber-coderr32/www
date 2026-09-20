@@ -38,17 +38,15 @@ export const PWAInstallPrompt: React.FC = () => {
 
   const installApp = async () => {
     if (!installEvent) {
-      setMessage('Abra este site diretamente no Chrome para instalar. O botão não funciona dentro da pré-visualização do v0.');
+      setMessage('O Chrome ainda não liberou a instalação para esta página. Abra o endereço publicado diretamente (não a pré-visualização do v0), confirme HTTPS e tente novamente.');
       return;
     }
 
     await installEvent.prompt();
     const choice = await installEvent.userChoice;
 
-    if (choice.outcome === 'accepted') {
-      setInstallEvent(null);
-      setMessage('Instalação iniciada.');
-    }
+    setInstallEvent(null);
+    setMessage(choice.outcome === 'accepted' ? 'Confirme a instalação na janela do Chrome.' : 'Instalação cancelada.');
   };
 
   if (isInstalled) return null;
